@@ -1,0 +1,42 @@
+### uVision2 Project, (C) Keil Software
+### Do not modify !
+
+ cExt (*.c)
+ aExt (*.s*; *.src; *.a*)
+ oExt (*.obj)
+ lExt (*.lib)
+ tExt (*.txt; *.h; *.inc)
+ pExt (*.plm)
+ CppX (*.cpp)
+ DaveTm { 0,0,0,0,0,0,0,0 }
+
+Target (SK CANOpen), 0x0000 // Tools: 'MCS-51'
+GRPOPT 1,(CANOpen stack),1,0,0
+GRPOPT 2,(SKCAN HW),1,0,0
+GRPOPT 3,(Application),1,0,0
+
+OPTFFF 1,1,1,0,0,0,0,0,<.\mco.c><mco.c> 
+OPTFFF 1,2,1,0,0,0,0,0,<.\mcohwSKCAN.c><mcohwSKCAN.c> 
+OPTFFF 2,3,1,587202560,0,0,0,0,<.\rSKCANio.c><rSKCANio.c> 
+OPTFFF 2,4,1,0,0,0,0,0,<.\lcd.c><lcd.c> 
+OPTFFF 3,5,1,570425344,0,12,26,0,<.\mainSKCAN.c><mainSKCAN.c> { 44,0,0,0,0,0,0,0,1,0,0,0,255,255,255,255,255,255,255,255,248,255,255,255,226,255,255,255,52,0,0,0,52,0,0,0,221,3,0,0,179,1,0,0 }
+OPTFFF 3,6,1,587202560,0,0,0,0,<.\userSKCAN.c><userSKCAN.c> 
+
+
+TARGOPT 1, (SK CANOpen)
+ CLK51=10000000
+  OPTTT 1,1,1,0
+  OPTHX 0,65535,0,0,0
+  OPTLX 120,65,8,<.\lst\>
+  OPTOX 16
+  OPTLT 1,1,1,0,1,1,0,1,0,0,0,0
+  OPTXL 1,1,1,1,1,1,1,0,0
+  OPTFL 1,0,1
+  OPTDL (S8051.DLL)()(D500.DLL)(-p515C)(S8051.DLL)()(T500.DLL)(-p515C)
+  OPTDBG 133118,0,()()()()()()()()()() (BIN\MON51.DLL)()()()
+  OPTKEY 0,(MON51)(-S1 -B9600 -O15)
+  OPTDF 0x80
+  OPTLE <>
+  OPTLC <>
+EndOpt
+
