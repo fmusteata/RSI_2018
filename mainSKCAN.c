@@ -83,7 +83,6 @@ void main
 	
 	    // Lanseaza prelucarea specifica retelei CANOpen
 	    MCO_ProcessStack();
-		LCD_vDisplayString("Init MCO - Done");
 
   	} // end of while(1)
 } // end of main

@@ -144,7 +144,8 @@ UNSIGNED8 MCOHW_PullMessage
     // verifica daca a fost primit vreun mesaj
     if (1)//(((CAN_CON->mesaj[j].MCRH) & 0x03) == 0x02)	   // NEWDAT?
 	{
-      
+      	/* FlMu: Stub for warning -- TO BE DELETED */
+		pReceiveBuf = 0; 
 /*OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO*/
 
       // return 1 - message received
@@ -171,14 +172,24 @@ UNSIGNED8 MCOHW_PushMessage
   // numarul de octeti de date
   UNSIGNED8  Length;
   // contor local
-//  UNSIGNED8  i;
+  UNSIGNED8  i;
 
   // Pregateste DLC si ID-ul CAN
   Length     = pTransmitBuf->LEN;
   Identifier = pTransmitBuf->ID;
 
 /*OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO*/
-  
+  CAN_CON->DR[gCANFilter].H = (Identifier & 0x07F8) >> 3;
+  CAN_CON->DR[gCANFilter].L = ((Identifier & 0x0007) << 5) | Length;
+
+  //CAN_CON[0].DR[gCANFilter].H
+
+  for(i=Length; i>0; i--)
+  {
+   		CAN_CON->MsgObj[gCANFilter].Data[i-1] = pTransmitBuf->BUF[i]; 
+  }
+
+  CAN_CON->TRSR1 = 1 << gCANFilter;
 /*OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO*/
 
   // mesaj transmis (s-a solicitat transmisia)
@@ -302,7 +313,8 @@ UNSIGNED8 MCOHW_Init
 //  UNSIGNED8 i;
   UNSIGNED8 baudrateok = 0;
 
-
+ /* Stub for warning -- TO BE DELETED */
+ BaudRate = 100;
 /*OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO*/
  //  -------------- CAN Mode/Status Register ---------------
   //  start the initialization of the CAN Module
@@ -397,8 +409,8 @@ UNSIGNED8 MCOHW_Init
   CAN_CON[1].DR[11].H  = 0xFF;
   CAN_CON[1].DR[11].L  = 0xE0;
 
-  CAN_CON[1].DR[12].H  = 0;
-  CAN_CON[1].DR[12].L  = 0;
+  CAN_CON[1].DR[12].H  = 0xFF;
+  CAN_CON[1].DR[12].L  = 0xE0;
 
   CAN_CON[1].DR[13].H  = 0xFF;
   CAN_CON[1].DR[13].L  = 0xE0;
@@ -456,10 +468,11 @@ else
 {
 	CAN_CON[0].DR[gCANFilter].H = CANID >> 3;
 	CAN_CON[0].DR[gCANFilter].L = CANID << 5;
+
+	gCANFilter++;
+
+	return 1;
 }
-
-
-
 /*OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO*/
 
    return 0;
