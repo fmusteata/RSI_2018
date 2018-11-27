@@ -1,0 +1,110 @@
+C51 COMPILER V8.02   RSKCANIO                                                              11/27/2018 18:28:33 PAGE 1   
+
+
+C51 COMPILER V8.02, COMPILATION OF MODULE RSKCANIO
+OBJECT MODULE PLACED IN .\obj\rSKCANio.obj
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE rSKCANio.c LARGE OPTIMIZE(9,SPEED) BROWSE ORDER INCDIR(..\MCO;..\SKCAN\Incl
+                    -ude) DEBUG OBJECTEXTEND PRINT(.\lst\rSKCANio.lst) OBJECT(.\obj\rSKCANio.obj)
+
+line level    source
+
+   1          /**************************************************************************
+   2          NAME:    rC515Cio.c                                                   
+   3          INFO:    Modul de I/E pentru placa MicroPac cu C515C               
+   4          RIGHTS:  Embedded Systems Academy   www.esacademy.com                
+   5          ---------------------------------------------------------------------------
+   6          DETAILS:                                                             
+   7          ---------------------------------------------------------------------------
+   8          HISTORY: V1.01 AA 15-OCT-2003 Added support for Atmel CANopen board
+   9                   V1.00 Kl 09-OCT-2002
+  10                           $LastChangedDate: 2016-10-01 $
+  11                   $LastChangedRevision: 45 $                                  
+  12          **************************************************************************/
+  13          
+  14          #include <reg515C.h> // Pentru Keil
+  15          #include <mco.h>
+  16          #include "rskcanio.h"
+  17          #include <lcd.h>
+  18          // Placa de dezvoltare suportata de acest driver
+  19          #define SKCAN  1   // SK_CAN board
+  20          
+  21          // precizeaza ce placa se utilizeaza
+  22          #define BOARDTYPE SKCAN
+  23          
+  24          /**************************************************************************
+  25          DOES:    Citeste intrarile switch-urilor DIP             
+  26          RETURNS: Valoarea curenta a switch-urilor DIP                    
+  27          **************************************************************************/
+  28          UNSIGNED8 read_dip_switches
+  29            (
+  30            void
+  31            )
+  32          {
+  33   1        UNSIGNED8 dip;
+  34   1      
+  35   1      #if (BOARDTYPE == SKCAN)
+  36   1        // citeste switch-urile
+  37   1        dip = P1 & 0x1F;
+  38   1      #endif
+  39   1      
+  40   1        // returneaza valoarea citita de la switch-uri
+  41   1        return (dip);
+  42   1      }
+  43          
+  44          /**************************************************************************
+  45          DOES:    Scrie un octet in portul de iesire conectat la LED-uri                 
+  46          RETURNS: nimic                                                     
+  47          **************************************************************************/
+  48          void switch_leds
+  49            (
+  50            UNSIGNED8 errr  // codul de eroare ce va fi afisat
+  51            )
+  52          {
+  53   1              LCD_vDisplayString("Eroare la :");
+  54   1              LCD_vDisplayCharacter(errr);
+C51 COMPILER V8.02   RSKCANIO                                                              11/27/2018 18:28:33 PAGE 2   
+
+  55   1      }
+  56          
+  57          
+  58          /**************************************************************************
+  59          DOES:   Daca un program detecteaza o eroare fatala, aceasta rutina poate fi
+  60                      folosita pentru a afisa codul de eroare.
+  61                          ACEASTA FUNCTIE BLOCHEAZA EXECUTIA PROGRAMULUI. 
+  62                          NUMAI UN RESET REIA FUNCTIONAREA PLACII!                                                 
+  63          RETURNS: nimic                                          
+  64          **************************************************************************/
+  65          void error_state
+  66            (
+  67            UNSIGNED8 error  // valoarea erorii ce va fi afisata
+  68             )
+  69          {
+  70   1              UNSIGNED8 i;
+  71   1      
+  72   1        // dezactiveaza intreruperile
+  73   1        EAL = 0;
+  74   1      
+  75   1        // bucla infinita     - eroarea poate fi afisata pe LCD
+  76   1               if(error>=8000)
+  77   1               { 
+  78   2                       switch_leds(error);
+  79   2                  for (i = 0; i <= 50000; i++){}      //delay
+  80   2                      MCOUSER_ResetApplication();
+  81   2               }
+  82   1        
+  83   1      }
+  84          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =     81    ----
+   CONSTANT SIZE    =     12    ----
+   XDATA SIZE       =   ----       2
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

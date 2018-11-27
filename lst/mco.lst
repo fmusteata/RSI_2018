@@ -1,0 +1,958 @@
+C51 COMPILER V8.02   MCO                                                                   11/27/2018 18:28:33 PAGE 1   
+
+
+C51 COMPILER V8.02, COMPILATION OF MODULE MCO
+OBJECT MODULE PLACED IN .\obj\mco.obj
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE mco.c LARGE OPTIMIZE(9,SPEED) BROWSE ORDER INCDIR(..\MCO;..\SKCAN\Include) 
+                    -DEBUG OBJECTEXTEND PRINT(.\lst\mco.lst) OBJECT(.\obj\mco.obj)
+
+line level    source
+
+   1          /**************************************************************************
+   2          MODULE:    MCO
+   3          CONTAINS:  MicroCANopen implementation
+   4          COPYRIGHT: Embedded Systems Academy, Inc. 2002-2003.
+   5                     All rights reserved. www.microcanopen.com
+   6                     This software was written in accordance to the guidelines at
+   7                     www.esacademy.com/software/softwarestyleguide.pdf
+   8          DISCLAIM:  Read and understand our disclaimer before using this code!
+   9                     www.esacademy.com/disclaim.htm
+  10          LICENSE:   Users that have purchased a license for PCANopenMagic
+  11                     (www.esacademy.com/software/pcanopenmagic)
+  12                     may use this code in commercial projects.
+  13                     Otherwise only educational use is acceptable.
+  14          VERSION:   2.00, Pf/Aa/Ck 21-OCT-03
+  15                     $LastChangedDate: 2015-06-15 $
+  16                     $LastChangedRevision: 232 $
+  17          ***************************************************************************/ 
+  18          
+  19          #include <mco.h>
+  20          #include <mcohwSKCAN.h>
+  21          #include <string.h>
+  22          
+  23          /**************************************************************************
+  24          VARIABILE GLOBALE
+  25          ***************************************************************************/ 
+  26          
+  27          // aceasta structura contine toata configuratia specifica nodului
+  28          MCO_CONFIG MEM_FAR gMCOConfig;
+  29          
+  30          #if NR_OF_TPDOS > 0
+  31          // aceasta structura contine toata configuratia a maximum 4 TPDO
+  32          TPDO_CONFIG MEM_FAR gTPDOConfig[NR_OF_TPDOS];
+  33          #endif
+  34          
+  35          // acesta este urmatorul TPDO de testat in MCO_ProcessStack
+  36          UNSIGNED8 MEM_FAR gTPDONr = NR_OF_TPDOS;
+  37          
+  38          #if NR_OF_RPDOS > 0
+  39          // aceasta structura contine toata configuratia a maximum 4 RPDO
+  40          RPDO_CONFIG MEM_FAR gRPDOConfig[NR_OF_RPDOS];
+  41          #endif
+  42          
+  43          // aceasta structura contine ultimul mesaj CAN receptionat
+  44          CAN_MSG MEM_FAR gRxCAN;
+  45          
+  46          // aceasta structura contine mesajul CAN pentru raspunsuri SDO sau aborts
+  47          CAN_MSG MEM_FAR gTxSDO;
+  48          
+  49          // imaginea procesului definita in user_C515C.c
+  50          extern UNSIGNED8 MEM_NEAR gProcImg[];
+  51          
+  52          // tabel cu raspunsurile SDO la cererile de citire a OD- definit in user_C515C.c
+  53          extern UNSIGNED8 MEM_CONST SDOResponseTable[];
+  54          
+C51 COMPILER V8.02   MCO                                                                   11/27/2018 18:28:33 PAGE 2   
+
+  55          #ifdef PROCIMG_IN_OD
+  56          // tabel cu intrarile OD la variabilele de proces
+  57          extern OD_PROCESS_DATA_ENTRY MEM_CONST gODProcTable[];
+  58          #endif
+  59          
+  60          /**************************************************************************
+  61          FUNCTII LOCALE
+  62          ***************************************************************************/
+  63          
+  64          // Mesaje SDO Abort
+  65          #define SDO_ABORT_UNSUPPORTED     0x06010000UL
+  66          #define SDO_ABORT_NOT_EXISTS      0x06020000UL
+  67          #define SDO_ABORT_READONLY        0x06010002UL
+  68          #define SDO_ABORT_TYPEMISMATCH    0x06070010UL
+  69          #define SDO_ABORT_UNKNOWN_COMMAND 0x05040001UL
+  70          #define SDO_ABORT_UNKNOWNSUB      0x06090011UL
+  71          
+  72          
+  73          /**************************************************************************
+  74          DOES:    Cautã un anumit index si subindex in tabelul cu raspunsuri SDO.
+  75          RETURNS: 255 daca nu a fost gasit, altfel, numarul inregistrarii gasite
+  76                   (incepe de la zero)
+  77          **************************************************************************/
+  78          UNSIGNED8 MCO_Search_OD
+  79            (
+  80            UNSIGNED16 index,   // Indexul intrarii OD cautate
+  81            UNSIGNED8 subindex // Subindexul intrarii OD cautate
+  82            )
+  83          {
+  84   1        UNSIGNED8 data i;
+  85   1        UNSIGNED8 data i_hi, hi;
+  86   1        UNSIGNED8 data i_lo, lo;
+  87   1        UNSIGNED8 const code *p;
+  88   1        UNSIGNED8 const code *r;
+  89   1      
+  90   1        i = 0;
+  91   1        i_hi = (UNSIGNED8) (index >> 8);
+  92   1        i_lo = (UNSIGNED8) index;
+  93   1        r = &(SDOResponseTable[0]);
+  94   1        while (i < 255)
+  95   1        {
+  96   2          p = r;
+  97   2          // pune r pe urmatoarea inregistrare din tabel
+  98   2          r += 8;
+  99   2          // sare peste octetul de comanda
+ 100   2          p++;
+ 101   2              lo = *p;
+ 102   2              p++;
+ 103   2              hi = *p;
+ 104   2          // daca indexul in tabel este 0xFFFF, s-a terminat tabelul
+ 105   2          if ((lo == 0xFF) && (hi == 0xFF))
+ 106   2          {
+ 107   3                return 255;
+ 108   3              }
+ 109   2          if (lo == i_lo)
+ 110   2          { 
+ 111   3            if (hi == i_hi)
+ 112   3            { 
+ 113   4              p++;
+ 114   4              // intrare gasita?
+ 115   4              if (*p == subindex)
+ 116   4              {
+C51 COMPILER V8.02   MCO                                                                   11/27/2018 18:28:33 PAGE 3   
+
+ 117   5                return i;
+ 118   5              }
+ 119   4            }
+ 120   3          }
+ 121   2          i++;
+ 122   2        }
+ 123   1      
+ 124   1        // nu a fost gasita
+ 125   1        return 255;
+ 126   1      }
+ 127          
+ 128          #ifdef PROCIMG_IN_OD
+ 129          /**************************************************************************
+ 130          DOES:    Cauta in gODProcTable definit in user_C515C.c o intrare cu un anumit index si subindex.
+ 131          RETURNS: 255 daca nu a fost gasita, altfel numarul inraegistrarii gasite
+ 132                   (incepand cu 0)
+ 133          **************************************************************************/
+ 134          UNSIGNED8 MCO_SearchODProcTable
+ 135            (
+ 136            UNSIGNED16 index,    // Indexul intrarii OD cautate
+ 137            UNSIGNED8 subindex  // Subindexul intrarii OD cautate
+ 138            )
+ 139          {
+ 140   1        UNSIGNED8 j = 0;
+ 141   1        UNSIGNED16 compare;
+ 142   1        // pointer la inregistrarile OD
+ 143   1        OD_PROCESS_DATA_ENTRY MEM_CONST *pOD;
+ 144   1      
+ 145   1        // initializeaza pointerul
+ 146   1        pOD = &(gODProcTable[0]);
+ 147   1        // executa pana la sfarsitul tabelului
+ 148   1        while (j < 0xFF)
+ 149   1        {
+ 150   2          compare = pOD->idx;
+ 151   2          // sfarsit tabel? 
+ 152   2          if (compare == 0xFFFF)
+ 153   2          {
+ 154   3            return 0xFF;
+ 155   3          }
+ 156   2          // index gasit?
+ 157   2          if (compare == index)
+ 158   2          {
+ 159   3            // subindex gasit?
+ 160   3            if (pOD->subidx == subindex)
+ 161   3            {
+ 162   4              return j;
+ 163   4            }
+ 164   3          }
+ 165   2          // incrementeaza cu SIZEOF(OD_PROCESS_DATA_ENTRY)
+ 166   2          pOD++;
+ 167   2          j++;
+ 168   2        }
+ 169   1      
+ 170   1        // nu a fost gasita
+ 171   1        return 0xFF;
+ 172   1      }
+ 173          
+ 174          /**************************************************************************
+ 175          DOES:    Functie de iesire pentru SDO_Handler. 
+ 176                   Transmite un raspuns SDO cu lungime variabila (1-4 octeti).
+ 177                   Se bazeaza pe faptul ca gTxSDO.ID, LEN si BUF[1-3] sunt deja incarcati.
+ 178          RETURNS: 1 daca raspunsul a fost transmis 
+C51 COMPILER V8.02   MCO                                                                   11/27/2018 18:28:33 PAGE 4   
+
+ 179          **************************************************************************/
+ 180          UNSIGNED8 MCO_ReplyWith
+ 181            (
+ 182            UNSIGNED8 *pDat,  // pointer la SDO data
+ 183            UNSIGNED8 len     // numarul de octeti de date in SDO
+ 184            )
+ 185          {
+ 186   1        signed char k; // pentru numaratorul buclei
+ 187   1      
+ 188   1        // expedited, len of data
+ 189   1        gTxSDO.BUF[0] = 0x43 | ((4-len) << 2);
+ 190   1        // copiaza in ordine descrescatoare a adreselor pentru a incepe cu LSB
+ 191   1        for (k = (len - 1); k >= 0; k--)
+ 192   1        {
+ 193   2          gTxSDO.BUF[4+k] = *pDat;
+ 194   2          pDat++;
+ 195   2        }
+ 196   1      
+ 197   1        // transmite mesajul
+ 198   1        if (!MCOHW_PushMessage(&gTxSDO))
+ 199   1        {
+ 200   2          // transmisie esuata
+ 201   2          MCOUSER_FatalError(0x8801);
+ 202   2        }
+ 203   1      
+ 204   1        // mesaj transmis cu succes
+ 205   1        return 1;
+ 206   1      }
+ 207          #endif // PROCIMG_IN_OD
+ 208          
+ 209          /**************************************************************************
+ 210          DOES:    Genereaza un raspuns SDO Abort
+ 211          RETURNS: nimic
+ 212          **************************************************************************/
+ 213          void MCO_Send_SDO_Abort
+ 214            (
+ 215            UNSIGNED32 ErrorCode  // 4 octeti cod eroare SDO abort
+ 216            )
+ 217          {
+ 218   1        UNSIGNED8 i;
+ 219   1      
+ 220   1        // construieste mesajul
+ 221   1        gTxSDO.BUF[0] = 0x80;
+ 222   1        for (i=0;i<4;i++)
+ 223   1        {
+ 224   2          gTxSDO.BUF[4+i] = ErrorCode;
+ 225   2          ErrorCode >>= 8;
+ 226   2        }
+ 227   1      
+ 228   1        // transmite mesajul
+ 229   1        if (!MCOHW_PushMessage(&gTxSDO))
+ 230   1        {
+ 231   2          // transmisie esuata
+ 232   2          MCOUSER_FatalError(0x8801);
+ 233   2        }
+ 234   1      }
+ 235          
+ 236          /**************************************************************************
+ 237          DOES:    Gestioneaza o cerere SDO primita.
+ 238          RETURNS: 1 daca SDO a fost accesat cu succes, 0 daca s-a generat un SDO abort
+ 239          **************************************************************************/
+ 240          UNSIGNED8 MCO_Handle_SDO_Request 
+C51 COMPILER V8.02   MCO                                                                   11/27/2018 18:28:33 PAGE 5   
+
+ 241            (
+ 242            UNSIGNED8 *pData  // pointer la 8 octeti de date cu cererea SDO
+ 243            )
+ 244          {
+ 245   1        // octetul de comanda al cererii SDO
+ 246   1        UNSIGNED8 cmd;
+ 247   1        // indexul intrarii cerute de SDO
+ 248   1        UNSIGNED16 index;
+ 249   1        // subindexul intrarii cerute de SDO
+ 250   1        UNSIGNED8 subindex;
+ 251   1        // rezultatul cautarii in OD
+ 252   1        UNSIGNED8 found;
+ 253   1      #ifdef PROCIMG_IN_OD
+ 254   1        UNSIGNED8 len;
+ 255   1        // pointer la o intrare in gODProcTable
+ 256   1        OD_PROCESS_DATA_ENTRY MEM_CONST *pOD;
+ 257   1      #endif 
+ 258   1      
+ 259   1        // initializare variabile
+ 260   1        // cei mai semnificativi 3 biti contin comanda
+ 261   1        cmd = *pData & 0xE0;
+ 262   1        // extrage MSB al indexului
+ 263   1        index = pData[2];
+ 264   1        // adauga LSB al indexului
+ 265   1        index = (index << 8) + pData[1];
+ 266   1        // extrage subindexul
+ 267   1        subindex = pData[3];
+ 268   1      
+ 269   1        // copiaza multiplexorul in raspuns
+ 270   1        // index low
+ 271   1        gTxSDO.BUF[1] = pData[1];
+ 272   1        // index high
+ 273   1        gTxSDO.BUF[2] = pData[2];
+ 274   1        // subindex
+ 275   1        gTxSDO.BUF[3] = pData[3];
+ 276   1      
+ 277   1        // este o comanda de citire sau scriere OD?
+ 278   1        if ((cmd == 0x40) || (cmd == 0x20)) 
+ 279   1        {
+ 280   2      
+ 281   2      #ifdef PROCIMG_IN_OD
+ 282   2          // trateaza accesul la variabilele de proces
+ 283   2          found = MCO_SearchODProcTable(index,subindex);
+ 284   2          // intrare gasita?
+ 285   2          if (found != 0xFF)
+ 286   2          {
+ 287   3                pOD = &(gODProcTable[found]);
+ 288   3            // comanda de citre OD?
+ 289   3            if (cmd == 0x40)
+ 290   3            {
+ 291   4              // citire permisa?
+ 292   4              if ((pOD->len & ODRD) != 0) // Verifica daca bitul RD bit e setat
+ 293   4              {
+ 294   5                return MCO_ReplyWith(&(gProcImg[pOD->offset]),(pOD->len & 0x0F));
+ 295   5              }
+ 296   4                      // citirea nu este permisa
+ 297   4              else
+ 298   4              {
+ 299   5                MCO_Send_SDO_Abort(SDO_ABORT_UNSUPPORTED);
+ 300   5                return 0;
+ 301   5              }
+ 302   4            }
+C51 COMPILER V8.02   MCO                                                                   11/27/2018 18:28:33 PAGE 6   
+
+ 303   3            // comanda de citire?
+ 304   3            else
+ 305   3            {
+ 306   4              // este setat bitul WR? - atunci scrierea e permisa
+ 307   4              if ((pOD->len & ODWR) != 0)
+ 308   4              {
+ 309   5                        // pentru scrieri: bitii 2 si 3 ai *pData sunt numarul de octeti fara date
+ 310   5                len = 4 - ((*pData & 0x0C) >> 2); 
+ 311   5                // lungimea este buna?
+ 312   5                if (len != (pOD->len & 0x0F))
+ 313   5                {
+ 314   6                  MCO_Send_SDO_Abort(SDO_ABORT_TYPEMISMATCH);
+ 315   6                  return 0;
+ 316   6                }
+ 317   5                // extrage data din cererea de scriere SDO si o copie in imaginea procesului
+ 318   5                while (len > 0)
+ 319   5                {
+ 320   6                  len--;
+ 321   6                  gProcImg[pOD->offset+len] = gRxCAN.BUF[4+len];
+ 322   6                }
+ 323   5                        // scrie raspunsul
+ 324   5                gTxSDO.BUF[0] = 0x60;
+ 325   5                if (!MCOHW_PushMessage(&gTxSDO))
+ 326   5                {
+ 327   6                  MCOUSER_FatalError(0x8808);
+ 328   6                }
+ 329   5                        return 1;
+ 330   5              }
+ 331   4              // scrierea nu este permisa
+ 332   4              else
+ 333   4              {
+ 334   5                MCO_Send_SDO_Abort(SDO_ABORT_UNSUPPORTED);
+ 335   5                return 0;
+ 336   5              }
+ 337   4            }
+ 338   3              }
+ 339   2      #endif // PROCIMG_IN_OD
+ 340   2      
+ 341   2          // cauta in tabelul constant 
+ 342   2          found = MCO_Search_OD(index,subindex);
+ 343   2          // intrare gasita?
+ 344   2          if (found < 255)
+ 345   2          {
+ 346   3                // comanda de citire?
+ 347   3            if (cmd == 0x40)
+ 348   3            {
+ 349   4              memcpy(&gTxSDO.BUF[0],&SDOResponseTable[(found*8)],8);
+ 350   4              if (!MCOHW_PushMessage(&gTxSDO))
+ 351   4              {
+ 352   5                MCOUSER_FatalError(0x8802);
+ 353   5              }
+ 354   4              return 1;
+ 355   4            }
+ 356   3            // comanda de scriere?
+ 357   3            MCO_Send_SDO_Abort(SDO_ABORT_READONLY);
+ 358   3            return 0;
+ 359   3          }
+ 360   2          if ((index == 0x1001) && (subindex == 0x00))
+ 361   2          {
+ 362   3            // comanda de citire
+ 363   3            if (cmd == 0x40)
+ 364   3            {
+C51 COMPILER V8.02   MCO                                                                   11/27/2018 18:28:33 PAGE 7   
+
+ 365   4                  // expedited, 1 octet de date
+ 366   4              gTxSDO.BUF[0] = 0x4F;
+ 367   4              gTxSDO.BUF[4] = gMCOConfig.error_register;
+ 368   4              if (!MCOHW_PushMessage(&gTxSDO))
+ 369   4              {
+ 370   5                MCOUSER_FatalError(0x8802);
+ 371   5              }
+ 372   4              return 1;
+ 373   4            }
+ 374   3            // comanda de scriere
+ 375   3            MCO_Send_SDO_Abort(SDO_ABORT_READONLY);
+ 376   3            return 0;
+ 377   3          }
+ 378   2      
+ 379   2      #ifdef DYNAMIC_HEARTBEAT
+ 380   2          // tratare HEARTBEAT dinamic (accese de citire/scriere)
+ 381   2          // acces la [1017,00] - heartbeat time
+ 382   2          if ((index == 0x1017) && (subindex == 0x00))
+ 383   2          {
+ 384   3            // comanda de citire?
+ 385   3            if (cmd == 0x40)
+ 386   3            {
+ 387   4                  // expedited, 2 bytes of data
+ 388   4              gTxSDO.BUF[0] = 0x4B;
+ 389   4              gTxSDO.BUF[4] = (UNSIGNED8) gMCOConfig.heartbeat_time;
+ 390   4              gTxSDO.BUF[5] = (UNSIGNED8) (gMCOConfig.heartbeat_time >> 8);
+ 391   4              if (!MCOHW_PushMessage(&gTxSDO))
+ 392   4              {
+ 393   5                MCOUSER_FatalError(0x8802);
+ 394   5              }
+ 395   4              return 1;
+ 396   4            }
+ 397   3            // comanda de scriere expedited cu 2 octeti de date
+ 398   3            if (*pData == 0x2B)
+ 399   3            {
+ 400   4              gMCOConfig.heartbeat_time = pData[5];
+ 401   4              gMCOConfig.heartbeat_time = (gMCOConfig.heartbeat_time << 8) + pData[4];
+ 402   4              // scrie raspunsul
+ 403   4              gTxSDO.BUF[0] = 0x60;
+ 404   4                      // necesar pentru a trece testul de conformanta: sterge octetii neutilizati
+ 405   4              gTxSDO.BUF[4] = 0;
+ 406   4              gTxSDO.BUF[5] = 0;
+ 407   4              gTxSDO.BUF[6] = 0;
+ 408   4              gTxSDO.BUF[7] = 0;
+ 409   4              if (!MCOHW_PushMessage(&gTxSDO))
+ 410   4              {
+ 411   5                MCOUSER_FatalError(0x8802);
+ 412   5              }
+ 413   4              return 1;
+ 414   4            }
+ 415   3            MCO_Send_SDO_Abort(SDO_ABORT_UNSUPPORTED);
+ 416   3            return 0;
+ 417   3          }
+ 418   2      #endif // DYNAMIC HEARTBEAT
+ 419   2      
+ 420   2          // Intrarea OD ceruta nu a fost gasita
+ 421   2          if (subindex == 0)
+ 422   2          {
+ 423   3            MCO_Send_SDO_Abort(SDO_ABORT_NOT_EXISTS);
+ 424   3          }
+ 425   2          else
+ 426   2          {
+C51 COMPILER V8.02   MCO                                                                   11/27/2018 18:28:33 PAGE 8   
+
+ 427   3            MCO_Send_SDO_Abort(SDO_ABORT_UNKNOWNSUB);
+ 428   3          }
+ 429   2          return 0;
+ 430   2        }
+ 431   1        // ignora cererea SDO Abort; orice alta cerere produce o eroare
+ 432   1        if (cmd != 0x80)
+ 433   1        {
+ 434   2          MCO_Send_SDO_Abort(SDO_ABORT_UNKNOWN_COMMAND);
+ 435   2          return 0;
+ 436   2        }
+ 437   1        return 1;
+ 438   1      }
+ 439          
+ 440          
+ 441          #if NR_OF_TPDOS > 0
+ 442          /**************************************************************************
+ 443          DOES:    Apelata cand se intra in modul operational.
+ 444                   Pregateste toate TPDO pentru functionare.
+ 445          RETURNS: nimic
+ 446          **************************************************************************/
+ 447          void MCO_Prepare_TPDOs 
+ 448            (
+ 449              void
+ 450            )
+ 451          {
+ 452   1      UNSIGNED8 i;
+ 453   1      
+ 454   1        i = 0;
+ 455   1        // pregateste toate TPDO pentru transmisie
+ 456   1        while (i < NR_OF_TPDOS)
+ 457   1        {
+ 458   2          // este folosit acest TPDO?
+ 459   2              if (gTPDOConfig[i].CAN.ID != 0)
+ 460   2          {
+ 461   3            // copiaza variabilele de proces curente
+ 462   3            memcpy(&gTPDOConfig[i].CAN.BUF[0],&(gProcImg[gTPDOConfig[i].offset]),gTPDOConfig[i].CAN.LEN);
+ 463   3      #ifdef USE_EVENT_TIME
+ 464   3            // reseteaza timerul event pentru transmisie imediata
+ 465   3            gTPDOConfig[i].event_timestamp = MCOHW_GetTime() - 2;
+ 466   3      #endif
+ 467   3      #ifdef USE_INHIBIT_TIME
+ 468   3            gTPDOConfig[i].inhibit_status = 2; // marcheaza ca gata de transmisie
+ 469   3            // reseteaza timerul inhibit pentru transmisie imediata
+ 470   3            gTPDOConfig[i].inhibit_timestamp = MCOHW_GetTime() - 2;
+ 471   3      #endif
+ 472   3          }
+ 473   2        i++;
+ 474   2        }
+ 475   1        // se asigura ca MCO_ProcessStack incepe cu TPDO1
+ 476   1        gTPDONr = NR_OF_TPDOS;
+ 477   1      }
+ 478          
+ 479          /**************************************************************************
+ 480          DOES:    Apelata cand un TPDO trebuie transmis
+ 481          RETURNS: nimic
+ 482          **************************************************************************/
+ 483          void MCO_TransmitPDO 
+ 484            (
+ 485            UNSIGNED8 PDONr  // Numarul TPDO-ului de transmis
+ 486            )
+ 487          {
+ 488   1      #ifdef USE_INHIBIT_TIME
+C51 COMPILER V8.02   MCO                                                                   11/27/2018 18:28:33 PAGE 9   
+
+ 489   1        // porneste un nou timer inhibit
+ 490   1        gTPDOConfig[PDONr].inhibit_status = 1;
+ 491   1        gTPDOConfig[PDONr].inhibit_timestamp = MCOHW_GetTime() + gTPDOConfig[PDONr].inhibit_time;
+ 492   1      #endif
+ 493   1      #ifdef USE_EVENT_TIME
+ 494   1        gTPDOConfig[gTPDONr].event_timestamp = MCOHW_GetTime() + gTPDOConfig[gTPDONr].event_time; 
+ 495   1      #endif
+ 496   1        if (!MCOHW_PushMessage(&gTPDOConfig[PDONr].CAN))
+ 497   1        {
+ 498   2          MCOUSER_FatalError(0x8801);
+ 499   2        }
+ 500   1      }
+ 501          #endif // NR_OF_TPDOS > 0
+ 502          
+ 503          /**************************************************************************
+ 504          FUNCTII PUBLICE
+ 505          ***************************************************************************/ 
+ 506          
+ 507          /**************************************************************************
+ 508          DOES:    Initializeaza stiva MicroCANopen
+ 509                   Trebuie apelata din MCOUSER_ResetApplication
+ 510          RETURNS: nimic
+ 511          **************************************************************************/
+ 512          void MCO_Init 
+ 513            (
+ 514            UNSIGNED16 Baudrate,  // CAN baudrate in kbit (1000,800,500,250,125,50,25 sau 10)
+ 515            UNSIGNED8 Node_ID,   // CANopen node ID (1-126)
+ 516            UNSIGNED16 Heartbeat  // Heartbeat time in ms (0 daca nu se foloseste)
+ 517            )
+ 518          {
+ 519   1        UNSIGNED8 i;
+ 520   1      
+ 521   1        // Initializeaza variabilele globale
+ 522   1        gMCOConfig.Node_ID = Node_ID;
+ 523   1        gMCOConfig.error_code = 0;
+ 524   1        gMCOConfig.Baudrate = Baudrate;
+ 525   1        gMCOConfig.heartbeat_time = Heartbeat;
+ 526   1        gMCOConfig.heartbeat_msg.ID = 0x700+Node_ID;
+ 527   1        gMCOConfig.heartbeat_msg.LEN = 1;
+ 528   1      
+ 529   1        // starea curenta NMT a acestui nod = bootup
+ 530   1        gMCOConfig.heartbeat_msg.BUF[0] = 0;
+ 531   1        gMCOConfig.error_register = 0;
+ 532   1       
+ 533   1        // Initializeaza mesajul SDO Response/Abort
+ 534   1        gTxSDO.ID = 0x580+gMCOConfig.Node_ID;
+ 535   1        gTxSDO.LEN = 8;
+ 536   1         
+ 537   1      #if NR_OF_TPDOS > 0
+ 538   1        i = 0;
+ 539   1        // initializeaza TPDO-urile
+ 540   1        while (i < NR_OF_TPDOS)
+ 541   1        {
+ 542   2          gTPDOConfig[i].CAN.ID = 0;
+ 543   2          i++;
+ 544   2        }
+ 545   1      #endif
+ 546   1      #if NR_OF_RPDOS > 0
+ 547   1        i = 0;
+ 548   1        // initializeaza RPDO-urile
+ 549   1        while (i < NR_OF_RPDOS)
+ 550   1        {
+C51 COMPILER V8.02   MCO                                                                   11/27/2018 18:28:33 PAGE 10  
+
+ 551   2          gRPDOConfig[i].CANID = 0;
+ 552   2          i++;
+ 553   2        }
+ 554   1      #endif
+ 555   1      
+ 556   1        // initializeaza controlerul CAN
+ 557   1        if (!MCOHW_Init(Baudrate))
+ 558   1        {
+ 559   2          MCOUSER_FatalError(0x8802);
+ 560   2        }
+ 561   1        // pentru mesajul NMT master
+ 562   1        if (!MCOHW_SetCANFilter(0))
+ 563   1        {
+ 564   2          MCOUSER_FatalError(0x8803);
+ 565   2        }
+ 566   1        // pentru cererile SDO
+ 567   1        if (!MCOHW_SetCANFilter(0x600+Node_ID))
+ 568   1        {
+ 569   2          MCOUSER_FatalError(0x8803);
+ 570   2        }
+ 571   1      
+ 572   1        // semnaleaza stivei MCO_ProcessStack: nodul s-a initializat
+ 573   1        gTPDONr = 0xFF;
+ 574   1      }  
+ 575          
+ 576          #if NR_OF_RPDOS > 0
+ 577          /**************************************************************************
+ 578          DOES:   Aceasta functie initializeaza un RPDO. Odata initializat, stiva MicroCANopen actualizeaza automat 
+             -datele la offset.
+ 579                          NOTA:  Din motive de consistenta a datelor, aplicatia nu trebuie sa citeasca datele in timp ce se execut
+             -a MCO_ProcessStack.
+ 580          RETURNS: nimic
+ 581          **************************************************************************/
+ 582          void MCO_InitRPDO
+ 583            (
+ 584            UNSIGNED8 PDO_NR,       // Numarul RPDO (1-4)
+ 585            UNSIGNED16 CAN_ID,       // Identificatorul CAN identifier ce trebuie folosit (daca e 0 se utilizeaza ce
+             -l implicit)
+ 586            UNSIGNED8 len,          // Numarul de octeti de date in RPDO
+ 587            UNSIGNED8 offset        // Offset-ul cu amplasarea datelor in imaginea procesului
+ 588            )
+ 589          {
+ 590   1      
+ 591   1      #ifdef CHECK_PARAMETERS 
+ 592   1        // verifica domeniul PDO si al ID-ului nodului (1 - 127)
+ 593   1        if (((PDO_NR < 1)             || (PDO_NR > NR_OF_RPDOS))      || 
+ 594   1            ((gMCOConfig.Node_ID < 1) || (gMCOConfig.Node_ID > 127)))
+ 595   1        {
+ 596   2          MCOUSER_FatalError(0x8804);
+ 597   2        }
+ 598   1        // offset-ul este inafara imaginii procesului?
+ 599   1        if (offset >= PROCIMG_SIZE)   
+ 600   1        { 
+ 601   2          MCOUSER_FatalError(0x8904);
+ 602   2        }
+ 603   1      #endif
+ 604   1        PDO_NR--;
+ 605   1        gRPDOConfig[PDO_NR].len = len;
+ 606   1        gRPDOConfig[PDO_NR].offset = offset;
+ 607   1        if (CAN_ID == 0)
+ 608   1        {
+ 609   2          gRPDOConfig[PDO_NR].CANID = 0x200 + (0x100 * ((UNSIGNED16)(PDO_NR))) + gMCOConfig.Node_ID;
+C51 COMPILER V8.02   MCO                                                                   11/27/2018 18:28:33 PAGE 11  
+
+ 610   2        }
+ 611   1        else
+ 612   1        {
+ 613   2          gRPDOConfig[PDO_NR].CANID = CAN_ID;
+ 614   2        }
+ 615   1        if (!MCOHW_SetCANFilter(gRPDOConfig[PDO_NR].CANID))
+ 616   1        {
+ 617   2          MCOUSER_FatalError(0x8805);
+ 618   2        }
+ 619   1      }
+ 620          #endif // NR_OF_RPDOS > 0
+ 621          
+ 622          
+ 623          #if NR_OF_TPDOS > 0
+ 624          /**************************************************************************
+ 625          DOES:    Aceasta functie initializeaza un TPDO. Odata initializata, 
+ 626                           stiva MicroCANopen gestioneaza automat transmisia PDO
+ 627                   Aplicatia poate modifica datele in orice moment.
+ 628          NOTE:    Pentru consistenta datelor, aplicatia nu trebuie sa scrie date noi
+ 629                           in timp ce se executa MCO_ProcessStack executes.
+ 630          RETURNS: nimic
+ 631          **************************************************************************/
+ 632          void MCO_InitTPDO
+ 633            (
+ 634            UNSIGNED8 PDO_NR,        // Numarul TPDO (1-4)
+ 635            UNSIGNED16 CAN_ID,        // Identificatorul CAN ce va fi folosit (daca e 0 se foloseste cel implicit)
+ 636            UNSIGNED16 event_time,    // Transmis la fiecare event_tim ms 
+ 637            UNSIGNED16 inhibit_time,  // Inhibit time in ms pentru transmisie la schimbarea starii
+ 638                                // (pus pe 0 daca se foloseste numai event_tim)
+ 639            UNSIGNED8 len,           // Numarul de octeti de date in TPDO
+ 640            UNSIGNED8 offset         // Offset-ul la locatia datelor in imaginea proceselor
+ 641            )
+ 642          {
+ 643   1      
+ 644   1      #ifdef CHECK_PARAMETERS
+ 645   1        // verifica domeniul PDO, node id, domeniul len 1 - 8 si event time sau inhibit time
+ 646   1        if (((PDO_NR < 1)             || (PDO_NR > NR_OF_TPDOS))     ||
+ 647   1            ((gMCOConfig.Node_ID < 1) || (gMCOConfig.Node_ID > 127)) ||
+ 648   1            ((len < 1)                || (len > 8))                  ||
+ 649   1            ((event_time == 0)        && (inhibit_time == 0)))
+ 650   1        {
+ 651   2          MCOUSER_FatalError(0x8806);
+ 652   2        }
+ 653   1        // offset-ul depaseste imaginea procesului?
+ 654   1        if (offset >= PROCIMG_SIZE)   
+ 655   1        { 
+ 656   2          MCOUSER_FatalError(0x8906);
+ 657   2        }
+ 658   1      #endif
+ 659   1        PDO_NR--;
+ 660   1        if (CAN_ID == 0)
+ 661   1        {
+ 662   2          gTPDOConfig[PDO_NR].CAN.ID = 0x180 + (0x100 * ((UNSIGNED16)(PDO_NR))) + gMCOConfig.Node_ID;
+ 663   2        }
+ 664   1        else
+ 665   1        {
+ 666   2          gTPDOConfig[PDO_NR].CAN.ID = CAN_ID;
+ 667   2        }
+ 668   1        gTPDOConfig[PDO_NR].CAN.LEN = len;
+ 669   1        gTPDOConfig[PDO_NR].offset = offset;
+ 670   1      #ifdef USE_EVENT_TIME
+ 671   1        gTPDOConfig[PDO_NR].event_time = event_time;
+C51 COMPILER V8.02   MCO                                                                   11/27/2018 18:28:33 PAGE 12  
+
+ 672   1      #endif
+ 673   1      #ifdef USE_INHIBIT_TIME
+ 674   1        gTPDOConfig[PDO_NR].inhibit_time = inhibit_time;
+ 675   1      #endif
+ 676   1      }
+ 677          #endif // NR_OF_TPDOS > 0
+ 678          
+ 679          
+ 680          /**************************************************************************
+ 681          DOES:    TAceasta functie implementeaza stiva MicroCANopen. 
+ 682                   Trebuie apelata frecvent pentru a asigura functionarea corecta a stivei. 
+ 683                   De obicei, este apelata dintr-o bucla infinita while(1) in main.
+ 684          RETURNS: 0 daca nu s-a intamplat nimic, 1 daca s-a primit sau s-a transmis un mesaj CAN.
+ 685          **************************************************************************/
+ 686          UNSIGNED8 MCO_ProcessStack
+ 687            (
+ 688            void
+ 689            )
+ 690          {
+ 691   1        UNSIGNED8 i;
+ 692   1        UNSIGNED8 ret_val = 0;
+ 693   1      
+ 694   1        // verifica daca este imediat dupa initializare
+ 695   1        // acesta a fost pus de MCO_Init
+ 696   1        if (gTPDONr == 0xFF)
+ 697   1        {
+ 698   2          // initializeaza heartbeat time
+ 699   2          gMCOConfig.heartbeat_timestamp = MCOHW_GetTime() + gMCOConfig.heartbeat_time;
+ 700   2          // transmite mesajul boot-up  
+ 701   2          if (!MCOHW_PushMessage(&gMCOConfig.heartbeat_msg))
+ 702   2          {
+ 703   3            MCOUSER_FatalError(0x8801);
+ 704   3          }
+ 705   2      #ifdef AUTOSTART
+ 706   2      // intra automat in starea operationala
+ 707   2          gMCOConfig.heartbeat_msg.BUF[0] = 0x05;
+ 708   2      #if NR_OF_TPDOS > 0 
+ 709   2              MCO_Prepare_TPDOs();
+ 710   2      #endif
+ 711   2      
+ 712   2      #else
+                  // intra in starea pre-operationala
+                  gMCOConfig.heartbeat_msg.BUF[0] = 0x7F;
+              #endif
+ 716   2          // return value to default
+ 717   2          gTPDONr = NR_OF_TPDOS;
+ 718   2          return 1;
+ 719   2        }
+ 720   1       
+ 721   1        // trateaza urmatoarele mesaje receptionate
+ 722   1        // daca este un mesaj primit
+ 723   1        if (MCOHW_PullMessage(&gRxCAN))
+ 724   1        {
+ 725   2          // este un mesaj NMT master?
+ 726   2          if (gRxCAN.ID == 0)
+ 727   2          {
+ 728   3            // Mesajul NMT este pentru acest nod sau pentru toate nodurile
+ 729   3            if ((gRxCAN.BUF[1] == gMCOConfig.Node_ID) || (gRxCAN.BUF[1] == 0))
+ 730   3            {
+ 731   4              switch (gRxCAN.BUF[0])
+ 732   4              {
+ 733   5                // porneste nodul
+C51 COMPILER V8.02   MCO                                                                   11/27/2018 18:28:33 PAGE 13  
+
+ 734   5                case 1:
+ 735   5                  gMCOConfig.heartbeat_msg.BUF[0] = 5;
+ 736   5      #if NR_OF_TPDOS > 0          
+ 737   5                  MCO_Prepare_TPDOs();
+ 738   5      #endif
+ 739   5                  break;
+ 740   5      
+ 741   5                // opreste nodul
+ 742   5                case 2:
+ 743   5                  gMCOConfig.heartbeat_msg.BUF[0] = 4;
+ 744   5                  break;
+ 745   5      
+ 746   5                // intra in modul pre-operational
+ 747   5                case 128:
+ 748   5                  gMCOConfig.heartbeat_msg.BUF[0] = 127;
+ 749   5                  break;
+ 750   5         
+ 751   5                // reseteaza nodul
+ 752   5                case 129:
+ 753   5                  MCOUSER_ResetApplication();
+ 754   5                  break;
+ 755   5      
+ 756   5                // reseteaza comunicatia nodului
+ 757   5                case 130:
+ 758   5                  MCOUSER_ResetCommunication();
+ 759   5                  break;
+ 760   5      
+ 761   5                // comanda necunoscuta
+ 762   5                default:
+ 763   5                  break;
+ 764   5              }
+ 765   4      
+ 766   4              return 1;
+ 767   4            } // Mesaj NMT master destinat acestui nod
+ 768   3          } // Mesaj NMT master primit
+ 769   2          
+ 770   2          // daca nodul nu este oprit...
+ 771   2          if (gMCOConfig.heartbeat_msg.BUF[0] != 4)
+ 772   2          {
+ 773   3            // este mesajul o cerere SDO pentru acest nod?
+ 774   3            if (gRxCAN.ID == gMCOConfig.Node_ID+0x600)
+ 775   3            {
+ 776   4              // trateaza cererea SDO - valoare returnata neutilizata in aceasta versiune
+ 777   4              i = MCO_Handle_SDO_Request(&gRxCAN.BUF[0]);
+ 778   4              return 1;
+ 779   4            }
+ 780   3          }
+ 781   2      
+ 782   2      #if NR_OF_RPDOS > 0
+ 783   2          // nodul este operational?
+ 784   2          if (gMCOConfig.heartbeat_msg.BUF[0] == 5)
+ 785   2          {
+ 786   3            i = 0;
+ 787   3            // testeaza RPDO-urile
+ 788   3            while (i < NR_OF_RPDOS)
+ 789   3            {
+ 790   4              // este unul dintre RPDO-urile nodului?
+ 791   4              if (gRxCAN.ID == gRPDOConfig[i].CANID)
+ 792   4              {
+ 793   5                // copie datele din RPDO in imaginea procesului
+ 794   5                memcpy(&(gProcImg[gRPDOConfig[i].offset]),&(gRxCAN.BUF[0]),gRPDOConfig[i].len);
+ 795   5                // iese din bucla
+C51 COMPILER V8.02   MCO                                                                   11/27/2018 18:28:33 PAGE 14  
+
+ 796   5                i = NR_OF_RPDOS;
+ 797   5                ret_val = 1;
+ 798   5              }
+ 799   4              i++;
+ 800   4            } // pentru toate RPDO-urile
+ 801   3          } // nodul este operational
+ 802   2      #endif // NR_OF_RPDOS > 0
+ 803   2        } // Mesaj primit
+ 804   1      
+ 805   1      #if NR_OF_TPDOS > 0
+ 806   1        // nodul este operational?
+ 807   1        if (gMCOConfig.heartbeat_msg.BUF[0] == 5)
+ 808   1        {
+ 809   2          // verifica urmatorul TPDO pentru transmisie
+ 810   2          gTPDONr++;
+ 811   2          if (gTPDONr >= NR_OF_TPDOS)
+ 812   2          {
+ 813   3            gTPDONr = 0;
+ 814   3          }
+ 815   2          // este TPDO-ul 'gTPDONr' in uz?
+ 816   2          if (gTPDOConfig[gTPDONr].CAN.ID != 0)
+ 817   2          {
+ 818   3      #ifdef USE_EVENT_TIME
+ 819   3            // TPDO-ul foloseste event timer si event timer a expirat? daca da, trebuie transmis mesajul acum
+ 820   3            if ((gTPDOConfig[gTPDONr].event_time != 0) && 
+ 821   3                (MCOHW_IsTimeExpired(gTPDOConfig[gTPDONr].event_timestamp)) )
+ 822   3            {
+ 823   4              // preia datele din imaginea procesului si transmite
+ 824   4              memcpy(&(gTPDOConfig[gTPDONr].CAN.BUF[0]),&(gProcImg[gTPDOConfig[gTPDONr].offset]),gTPDOConfig[gTP
+             -DONr].CAN.LEN);
+ 825   4              MCO_TransmitPDO(gTPDONr);
+ 826   4              return 1;
+ 827   4            }
+ 828   3      #endif // FOLOSESTE_EVENT_TIME
+ 829   3      #ifdef USE_INHIBIT_TIME
+ 830   3            // TPDO-ul foloseste inhibit time? - transmisie change-of-state
+ 831   3            if (gTPDOConfig[gTPDONr].inhibit_time != 0)
+ 832   3            {
+ 833   4              // timerul inihibit functioneaza?
+ 834   4              if (gTPDOConfig[gTPDONr].inhibit_status > 0)
+ 835   4              {
+ 836   5                // timerul inhibit a expirat?
+ 837   5                if (MCOHW_IsTimeExpired(gTPDOConfig[gTPDONr].inhibit_timestamp))
+ 838   5                {
+ 839   6                  // este un nou mesaj in asteptarea transmisiei?
+ 840   6                          if (gTPDOConfig[gTPDONr].inhibit_status == 2)
+ 841   6                              { 
+ 842   7                    // transmite acum
+ 843   7                    MCO_TransmitPDO(gTPDONr);
+ 844   7                    return 1;
+ 845   7                  }
+ 846   6                }
+ 847   5                // nici un mesaj nu asteapta, dar timerul a expirat
+ 848   5                else 
+ 849   5                        {
+ 850   6                          gTPDOConfig[gTPDONr].inhibit_status = 0;
+ 851   6                        }
+ 852   5                      }
+ 853   4              // starea inhibit e 0 sau 1?
+ 854   4              if (gTPDOConfig[gTPDONr].inhibit_status < 2)
+ 855   4              {
+ 856   5                // s-au modificat datele aplicatiei?
+C51 COMPILER V8.02   MCO                                                                   11/27/2018 18:28:33 PAGE 15  
+
+ 857   5                if ((memcmp(&gTPDOConfig[gTPDONr].CAN.BUF[0],&(gProcImg[gTPDOConfig[gTPDONr].offset]),gTPDOConfi
+             -g[gTPDONr].CAN.LEN) != 0))
+ 858   5                {
+ 859   6                  // copiaza noile date 
+ 860   6                              memcpy(&gTPDOConfig[gTPDONr].CAN.BUF[0],&(gProcImg[gTPDOConfig[gTPDONr].offset]),gTPDOConfig[gTPDONr].C
+             -AN.LEN);
+ 861   6                  // a expirat inhibit time?
+ 862   6                  if (gTPDOConfig[gTPDONr].inhibit_status == 0)
+ 863   6                  {
+ 864   7                    // transmite acum
+ 865   7                    MCO_TransmitPDO(gTPDONr);
+ 866   7                    return 1;
+ 867   7                  }
+ 868   6                  // starea inhibit este 1
+ 869   6                              else
+ 870   6                  {
+ 871   7                    // asteapta ca inhibit time sa expire 
+ 872   7                    gTPDOConfig[gTPDONr].inhibit_status = 2;
+ 873   7                              }
+ 874   6                }
+ 875   5              }
+ 876   4            } // Inhibit Time != 0
+ 877   3      #endif // USE_INHIBIT_TIME
+ 878   3          } // PDO activ (CAN_ID != 0)  
+ 879   2        } // daca nodul este operational
+ 880   1      #endif // NR_OF_TPDOS > 0
+ 881   1        
+ 882   1        // trebuie produs un heartbeat?
+ 883   1        if (gMCOConfig.heartbeat_time != 0)
+ 884   1        {
+ 885   2          // a expirat timpul pentru heartbeat?
+ 886   2          if (MCOHW_IsTimeExpired(gMCOConfig.heartbeat_timestamp))
+ 887   2          {
+ 888   3            // transmite mesaj heartbeat
+ 889   3            if (!MCOHW_PushMessage(&gMCOConfig.heartbeat_msg))
+ 890   3            {
+ 891   4              MCOUSER_FatalError(0x8801);
+ 892   4            }
+ 893   3            // pregateste un nou heartbeat time pentru urmatoarea transmisie
+ 894   3            gMCOConfig.heartbeat_timestamp = MCOHW_GetTime() + gMCOConfig.heartbeat_time;
+ 895   3            ret_val = 1;
+ 896   3          }
+ 897   2        }
+ 898   1        return ret_val;
+ 899   1      }
+ 900          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   2686    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     93      40
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----       5
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

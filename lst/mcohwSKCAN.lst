@@ -1,0 +1,524 @@
+C51 COMPILER V8.02   MCOHWSKCAN                                                            11/27/2018 18:28:33 PAGE 1   
+
+
+C51 COMPILER V8.02, COMPILATION OF MODULE MCOHWSKCAN
+OBJECT MODULE PLACED IN .\obj\mcohwSKCAN.obj
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE mcohwSKCAN.c LARGE OPTIMIZE(9,SPEED) BROWSE ORDER INCDIR(..\MCO;..\SKCAN\In
+                    -clude) DEBUG OBJECTEXTEND PRINT(.\lst\mcohwSKCAN.lst) OBJECT(.\obj\mcohwSKCAN.obj)
+
+line level    source
+
+   1          /**************************************************************************
+   2          MODULE:    MCOHWSKCAN
+   3          CONTAINS:  Preliminary, limited hardware driver implementation for
+   4                     Infineon C515C - tested using the MicroPac C515C board.
+   5                     This version was tested with the Keil compiler system.
+   6                     www.keil.com
+   7                     This version re-uses functions provided by
+   8                     www.esacademy.com/faq/progs
+   9          COPYRIGHT: Embedded Systems Academy, Inc. 2002-2003
+  10                     All rights reserved. www.microcanopen.com
+  11                     This software was written in accordance to the guidelines at
+  12                             www.esacademy.com/software/softwarestyleguide.pdf
+  13          DISCLAIM:  Read and understand our disclaimer before using this code!
+  14                     www.esacademy.com/disclaim.htm
+  15          LICENSE:   Users that have purchased a license for PCANopenMagic
+  16                     (www.esacademy.com/software/pcanopenmagic)
+  17                     may use this code in commercial projects.
+  18                     Otherwise only educational use is acceptable.
+  19          VERSION:   1.11, Pf/Aa/Ck 13-OCT-03
+  20                           $LastChangedDate: 2016-10-01 $
+  21                     $LastChangedRevision: 232 $
+  22          ---------------------------------------------------------------------------
+  23          Known shortcoming:
+  24          Only supports a transmit queue of length "1"
+  25          If queue occupied, waits until it is clear
+  26          ***************************************************************************/ 
+  27          
+  28          
+  29          
+  30          
+  31          #include <reg515C.h>
+  32          #include "mcohwSKCAN.h"
+  33          
+  34          // Placa de dezvoltare suportata de acest driver
+  35          #define SKCAN  1   // SK-CAN board
+  36          
+  37          // precizeaza tipul placii utilizate
+  38          #define BOARDTYPE SKCAN
+  39          
+  40          // definesc offset-ul pentru CAN intern
+  41          #define CAN_OFFSET 0xFD00
+  42          
+  43          
+  44          
+  45          // variabila globala timer/conter, incrementata la fiecare milisecunda
+  46          UNSIGNED16 MEM_NEAR gTimCnt = 0;
+  47          
+  48          // Numara filtrele folosite(obiectele de tip mesaj CAN)
+  49          UNSIGNED8 MEM_FAR gCANFilter = 0;
+  50          
+  51          #define CAN_OFFSET_81 0xFD00
+  52          
+  53          // Structura unui obiect
+  54          struct can_con_81
+C51 COMPILER V8.02   MCOHWSKCAN                                                            11/27/2018 18:28:33 PAGE 2   
+
+  55          {
+  56            UNSIGNED8  BL1;       //Bit-length register
+  57            UNSIGNED8  BL2;       //
+  58            UNSIGNED8  OC;        //Output-control register
+  59            UNSIGNED8  BRPR;              //Baud-rate prescaler
+  60            UNSIGNED8  RRR1;      //Receive-ready register
+  61            UNSIGNED8  RRR2;      //
+  62            UNSIGNED8  RIMR1;     //Receive-interrupt-mask register
+  63            UNSIGNED8  RIMR2;     //
+  64            UNSIGNED8  TRSR1;             //Transmit-request-set register
+  65            UNSIGNED8  TRSR2;             //
+  66            UNSIGNED8  IMSK;              //Interrupt-mask register
+  67            UNSIGNED8  res0B;             //
+  68            UNSIGNED8  res0C;             //
+  69            UNSIGNED8  res0D;             //
+  70            UNSIGNED8  res0E;             //
+  71            UNSIGNED8  res0F;             //
+  72          
+  73            UNSIGNED8  MOD;       //Mode/status register
+  74            UNSIGNED8  INT;       //Interrupt register
+  75            UNSIGNED8  CTRL;              //Control register
+  76            UNSIGNED8  res13;             //
+  77            UNSIGNED8  CC;        //Clock-control register
+  78            UNSIGNED8  TCEC;              //Transmit-check error counter
+  79            UNSIGNED8  TCD;       //Transmit-check data register
+  80            UNSIGNED8  res17;             //
+  81            UNSIGNED8  TRR1;              //Transmit-request-reset register
+  82            UNSIGNED8  TRR2;              //
+  83            UNSIGNED8  RRPR1;             //Remote-request-pending register
+  84            UNSIGNED8  RRPR2;             //
+  85            UNSIGNED8  TSCH;              //Time-Stamp counter
+  86            UNSIGNED8  TSCL;              //
+  87            UNSIGNED8  res1E;             //
+  88            UNSIGNED8  res1F;             //
+  89          
+  90            UNSIGNED8  res20;             //
+  91            UNSIGNED8  res21;             //
+  92            UNSIGNED8  res22;             //
+  93            UNSIGNED8  res23;             //
+  94            UNSIGNED8  res24;             //
+  95            UNSIGNED8  res25;             //
+  96            UNSIGNED8  res26;             //
+  97            UNSIGNED8  res27;             //
+  98            struct {
+  99                        UNSIGNED8 PDR;     //port-direction register
+ 100                        UNSIGNED8 PR;          //pin register
+ 101                        UNSIGNED8 LR;          //latch register
+ 102                        UNSIGNED8 resP;    //
+ 103                   }Port[2];      //
+ 104            struct {
+ 105                        UNSIGNED8 H;
+ 106                        UNSIGNED8 L;
+ 107                   }TSR[8];       //Time-Stamp Register
+ 108            struct {
+ 109                        UNSIGNED8 H;
+ 110                        UNSIGNED8 L;
+ 111                   }DR[16];       //Descriptor Register
+ 112            UNSIGNED8 res60_7F[32];      
+ 113            struct {
+ 114                        UNSIGNED8 Data[8];
+ 115          
+ 116                   }MsgObj[16];   //Data Register
+C51 COMPILER V8.02   MCOHWSKCAN                                                            11/27/2018 18:28:33 PAGE 3   
+
+ 117            
+ 118          };
+ 119          
+ 120          #define CAN_CON ((struct can_con_81 volatile xdata *) (CAN_OFFSET_81))
+ 121          /*OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO*/
+ 122          
+ 123          /**************************************************************************
+ 124          DOES:    Preia urmatorul mesaj CAN receptionat si il depune intr-un buffer de receptie
+ 125          RETURNS: 0 daca nu s-a primit nici un mesaj, 1 daca mesajul primit a fost copiat in buffer                
+             -                     
+ 126          -corectat-
+ 127          **************************************************************************/
+ 128          UNSIGNED8 MCOHW_PullMessage
+ 129            (
+ 130            CAN_MSG MEM_FAR *pReceiveBuf  // pointer la un buffer pentru un singur mesaj de stocat
+ 131            )
+ 132          {
+ 133   1        // declaratii de variabile
+ 134   1      //  UNSIGNED32 Identifier;
+ 135   1      //  UNSIGNED8  Length;
+ 136   1      //  UNSIGNED8  i,j;
+ 137   1              UNSIGNED8  j;
+ 138   1      
+ 139   1        // testeaza obiectele de receptie     definite
+ 140   1      /*  for (j=1; j<=gCANFilter; j++)
+ 141   1        {
+ 142   1      
+ 143   1      /*OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO*/
+ 144   1          // verifica daca a fost primit vreun mesaj
+ 145   1       //   if (1)//(((CAN_CON->mesaj[j].MCRH) & 0x03) == 0x02)          // NEWDAT?
+ 146   1      //      {
+ 147   1              /* FlMu: Stub for warning -- TO BE DELETED */
+ 148   1      //              pReceiveBuf = 0; 
+ 149   1      //*OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO*/
+ 150   1      
+ 151   1            // return 1 - message received
+ 152   1      //      return (1);
+ 153   1      //    }
+ 154   1        //}                                                                   
+ 155   1      
+ 156   1        // return 0 - no message received
+ 157   1        return (0);
+ 158   1      }
+*** WARNING C280 IN LINE 130 OF MCOHWSKCAN.C: 'pReceiveBuf': unreferenced local variable
+*** WARNING C280 IN LINE 137 OF MCOHWSKCAN.C: 'j': unreferenced local variable
+ 159          
+ 160          
+ 161          /**************************************************************************
+ 162          DOES:    Transmite un mesaj CAN                                  
+ 163          RETURNS: 0 daca messajul nu a putut fi transmis, 1 daca mesajul a fost transmis                           
+             -     
+ 164          **************************************************************************/
+ 165          UNSIGNED8 MCOHW_PushMessage
+ 166            (
+ 167            CAN_MSG MEM_FAR *pTransmitBuf  // pointer la buffer-ul ce contine mesajul CAN de transmis
+ 168            )
+ 169          {
+ 170   1        // Identificatorul mesajului CAN
+ 171   1        UNSIGNED32 Identifier;
+ 172   1        // numarul de octeti de date
+ 173   1        UNSIGNED8  Length;
+ 174   1        // contor local
+C51 COMPILER V8.02   MCOHWSKCAN                                                            11/27/2018 18:28:33 PAGE 4   
+
+ 175   1        UNSIGNED8  i;
+ 176   1      
+ 177   1        // Pregateste DLC si ID-ul CAN
+ 178   1        Length     = pTransmitBuf->LEN;
+ 179   1        Identifier = pTransmitBuf->ID;
+ 180   1      
+ 181   1      /*OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO*/
+ 182   1        CAN_CON->DR[gCANFilter].H = (Identifier & 0x07F8) >> 3;
+ 183   1        CAN_CON->DR[gCANFilter].L = ((Identifier & 0x0007) << 5) | Length;
+ 184   1      
+ 185   1        //CAN_CON[0].DR[gCANFilter].H
+ 186   1      
+ 187   1        for(i=Length; i>0; i--)
+ 188   1        {
+ 189   2                      CAN_CON->MsgObj[gCANFilter].Data[i-1] = pTransmitBuf->BUF[i-1]; 
+ 190   2        }
+ 191   1      
+ 192   1        CAN_CON->TRSR1 = 1 << gCANFilter;
+ 193   1      /*OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO*/
+ 194   1      
+ 195   1        // mesaj transmis (s-a solicitat transmisia)
+ 196   1        return 1;
+ 197   1      }
+ 198          
+ 199          
+ 200          /**************************************************************************
+ 201          DOES:    Preia valoarea timerului sistemului de 1 milisecunda 
+ 202          RETURNS: Valoarea curenta a timpului                                   
+ 203          **************************************************************************/
+ 204          UNSIGNED16 MCOHW_GetTime
+ 205            (
+ 206            void
+ 207            )
+ 208          {
+ 209   1        UNSIGNED16 tmp;
+ 210   1      
+ 211   1        // dezactiveaza intreruperile
+ 212   1        EAL = 0;
+ 213   1      
+ 214   1        // citeste valoarea timerului
+ 215   1        tmp = gTimCnt;
+ 216   1      
+ 217   1        // valideaza intreruperile
+ 218   1        EAL = 1;
+ 219   1      
+ 220   1        // returneaza valoarea timerului
+ 221   1        return tmp;
+ 222   1      }
+ 223          
+ 224          /**************************************************************************
+ 225          DOES:    Verifica daca un moment de timp a trecut (timpul a expirat)
+ 226          RETURNS: 0 daca timpul nu a expirat inca, 1 daca timpul a expirat             
+ 227          **************************************************************************/
+ 228          UNSIGNED8 MCOHW_IsTimeExpired
+ 229            (
+ 230            UNSIGNED16 timestamp  // valoare timp de testat daca a expirat
+ 231            )
+ 232          {
+ 233   1        UNSIGNED16 time_now;
+ 234   1      
+ 235   1        // dezactiveaza intreruperile
+ 236   1        EAL = 0;
+C51 COMPILER V8.02   MCOHWSKCAN                                                            11/27/2018 18:28:33 PAGE 5   
+
+ 237   1        // citeste valoarea timerului
+ 238   1        time_now = gTimCnt;
+ 239   1        // valideaza intreruperile
+ 240   1        EAL = 1;
+ 241   1        timestamp++;
+ 242   1        // daca timestamp <= timpul curent...
+ 243   1        if (time_now > timestamp)
+ 244   1        {
+ 245   2          // verifica daca timestamp a expirat
+ 246   2          if ((time_now - timestamp) < 0x8000)
+ 247   2          {
+ 248   3            return 1;
+ 249   3          }
+ 250   2              // timestamp nu a expirat
+ 251   2              else
+ 252   2              {
+ 253   3            return 0;
+ 254   3          }
+ 255   2        }
+ 256   1        // daca timestamp >= timpul curent....
+ 257   1        else
+ 258   1        {
+ 259   2          // verifica daca timestamp a expirat
+ 260   2          if ((timestamp - time_now) > 0x8000)
+ 261   2          {
+ 262   3            return 1;
+ 263   3          }
+ 264   2              // timestamp nu a expirat
+ 265   2          else
+ 266   2          {
+ 267   3            return 0;
+ 268   3          }
+ 269   2        }
+ 270   1      }
+ 271          
+ 272          /**************************************************************************
+ 273          DOES:    Functia de intrerupere a timerului                          
+ 274                   Incrementeaza numaratorul global de milisecunde           
+ 275                   Aceasta functie trebuie apelata o data la fiecare milisecunda 
+ 276          RETURNS: nimic                                                     
+ 277          **************************************************************************/
+ 278          void MCOHW_TimerISR
+ 279            (
+ 280            void
+ 281            ) interrupt 1
+ 282          {
+ 283   1      
+ 284   1      /*OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO*/
+ 285   1        // stop timer 0
+ 286   1        TR0 = 0;
+ 287   1      
+ 288   1      #if (BOARDTYPE == SKCAN)
+ 289   1        // reincarcare pentru 1ms at 10MHz, modul 1      // de recalculat
+ 290   1        TH0 = 0xF9;
+ 291   1        TL0 = 0x8E;
+ 292   1      #endif
+ 293   1        // start timer 0
+ 294   1        TR0 = 1;
+ 295   1      /*OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO*/
+ 296   1      
+ 297   1      
+ 298   1        // incrementeaza contorul global
+C51 COMPILER V8.02   MCOHWSKCAN                                                            11/27/2018 18:28:33 PAGE 6   
+
+ 299   1        gTimCnt++;
+ 300   1      }
+ 301          
+ 302          /**************************************************************************
+ 303          DOES:    Initializeaza controlerul CAN.                           
+ 304          CAUTION: Nu initializeaza filtrele - nimic nu se receptioneaza inca          
+ 305          RETURNS: 0 daca initializarea esueaza, 1 pentru succes                 
+ 306          **************************************************************************/
+ 307          
+ 308          UNSIGNED8 MCOHW_Init                     
+ 309            (
+ 310            UNSIGNED16 BaudRate  // viteza dorita in kbps
+ 311            )
+ 312          {
+ 313   1      //  UNSIGNED8 i;
+ 314   1        UNSIGNED8 baudrateok = 0;
+ 315   1      
+ 316   1       /* Stub for warning -- TO BE DELETED */
+ 317   1       BaudRate = 100;
+ 318   1      /*OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO*/
+ 319   1       //  -------------- CAN Mode/Status Register ---------------
+ 320   1        //  start the initialization of the CAN Module
+ 321   1        CAN_CON[0].MOD   = 0x001;
+ 322   1      
+ 323   1        //  -------------- Output-Control Register ----------------
+ 324   1        //  Output Mode:  Normal Mode
+ 325   1        //  TX0: The Output is driven directly with CAN data
+ 326   1        //       The high and low side transistor T0P/T0N are enable
+ 327   1        //  TX1: The Output is driven directly with CAN data
+ 328   1        //       The high and low side transistor T1P/T1N are enable
+ 329   1        CAN_CON[0].OC    = 0x0D8;
+ 330   1      
+ 331   1        //  --------------- CAN Control Register ------------------
+ 332   1        CAN_CON[0].CTRL  = 0x000;
+ 333   1      
+ 334   1        //  ---------------- Interrupt Register -------------------
+ 335   1        CAN_CON[0].INT   = 0x000;  //reset all interrupt request bits
+ 336   1        CAN_CON[0].IMSK  = 0x000;  //no interrupts (Interrupt mask register) 
+ 337   1        
+ 338   1        CAN_CON[0].RRR1  = 0x000;  //reset receive-Ready Register
+ 339   1        CAN_CON[0].RRR2  = 0x000;  //        -"-
+ 340   1        CAN_CON[0].RIMR1 = 0x000;  //disable all receive Bits (Receive-Interrupt -Mask Register)
+ 341   1        CAN_CON[0].RIMR2 = 0x000;
+ 342   1      
+ 343   1        ///  ------------ Bit Timing Register ---------------------
+ 344   1        /// baudrate =  100.000 KBaud
+ 345   1        /// there are 5 time quanta before sample point
+ 346   1        /// there are 4 time quanta after sample point
+ 347   1        /// the (re)synchronization jump width is 2 time quanta 
+ 348   1        CAN_CON[0].BL1   = 0x034;
+ 349   1        CAN_CON[0].BL2   = 0x041;
+ 350   1        CAN_CON[0].BRPR  = 0x009;
+ 351   1      
+ 352   1      
+ 353   1        //  ------------- Port Control Register -------------------
+ 354   1        CAN_CON[0].Port[0].PDR = 0x0FF;  //Port Direction Register (direction is output)
+ 355   1        CAN_CON[0].Port[0].LR  = 0x0FF;  //Port Latch Register ()
+ 356   1      
+ 357   1      
+ 358   1      
+ 359   1        //  ================== Descriptor Registers ===============
+ 360   1      
+C51 COMPILER V8.02   MCOHWSKCAN                                                            11/27/2018 18:28:33 PAGE 7   
+
+ 361   1        //  Message-Object 0
+ 362   1        CAN_CON[0].DR[0].H  = 0xFF;
+ 363   1        CAN_CON[0].DR[0].L  = 0xE0;
+ 364   1      
+ 365   1        //  Message-Object 1
+ 366   1        //   This message operates as a data frame
+ 367   1        //   Identifier = 0x7
+ 368   1        CAN_CON[0].DR[1].H  = 0xFF;         //
+ 369   1        CAN_CON[0].DR[1].L  = 0xE0;        // 
+ 370   1      
+ 371   1        CAN_CON[0].MsgObj[1].Data[7] = 0xAA;   // set data byte 7
+ 372   1        CAN_CON[0].MsgObj[1].Data[6] = 0x11;   // set data byte 6
+ 373   1        CAN_CON[0].MsgObj[1].Data[5] = 0x22;   // set data byte 5
+ 374   1        CAN_CON[0].MsgObj[1].Data[4] = 0x33;   // set data byte 4
+ 375   1        CAN_CON[0].MsgObj[1].Data[3] = 0x44;   // set data byte 3
+ 376   1        CAN_CON[0].MsgObj[1].Data[2] = 0x55;   // set data byte 2
+ 377   1        CAN_CON[0].MsgObj[1].Data[1] = 0x66;   // set data byte 1
+ 378   1        CAN_CON[0].MsgObj[1].Data[0] = 0x77;   // set data byte 0
+ 379   1      
+ 380   1      
+ 381   1        //  Message-Object 2-15
+ 382   1        CAN_CON[0].DR[2].H  = 0xFF;
+ 383   1        CAN_CON[0].DR[2].L  = 0xE0;
+ 384   1      
+ 385   1        CAN_CON[0].DR[3].H  = 0xFF;
+ 386   1        CAN_CON[0].DR[3].L  = 0xE0;
+ 387   1      
+ 388   1        CAN_CON[0].DR[4].H  = 0xFF;
+ 389   1        CAN_CON[0].DR[4].L  = 0xE0;
+ 390   1                        
+ 391   1        CAN_CON[0].DR[5].H  = 0xFF;
+ 392   1        CAN_CON[0].DR[5].L  = 0xE0;
+ 393   1      
+ 394   1        CAN_CON[0].DR[6].H  = 0xFF;
+ 395   1        CAN_CON[0].DR[6].L  = 0xE0;
+ 396   1           
+ 397   1        CAN_CON[0].DR[7].H  = 0xFF;
+ 398   1        CAN_CON[0].DR[7].L  = 0xE0;
+ 399   1      
+ 400   1        CAN_CON[0].DR[8].H  = 0xFF;
+ 401   1        CAN_CON[0].DR[8].L  = 0xE0;
+ 402   1      
+ 403   1        CAN_CON[0].DR[9].H  = 0xFF;
+ 404   1        CAN_CON[0].DR[9].L  = 0xE0;
+ 405   1      
+ 406   1        CAN_CON[0].DR[10].H  = 0xFF;
+ 407   1        CAN_CON[0].DR[10].L  = 0xE0;
+ 408   1      
+ 409   1        CAN_CON[0].DR[11].H  = 0xFF;
+ 410   1        CAN_CON[0].DR[11].L  = 0xE0;
+ 411   1      
+ 412   1        CAN_CON[0].DR[12].H  = 0xFF;
+ 413   1        CAN_CON[0].DR[12].L  = 0xE0;
+ 414   1      
+ 415   1        CAN_CON[0].DR[13].H  = 0xFF;
+ 416   1        CAN_CON[0].DR[13].L  = 0xE0;
+ 417   1      
+ 418   1        CAN_CON[0].DR[14].H  = 0xFF;
+ 419   1        CAN_CON[0].DR[14].L  = 0xE0;
+ 420   1      
+ 421   1        CAN_CON[0].DR[15].H  = 0xFF;
+ 422   1        CAN_CON[0].DR[15].L  = 0xE0;
+C51 COMPILER V8.02   MCOHWSKCAN                                                            11/27/2018 18:28:33 PAGE 8   
+
+ 423   1      
+ 424   1      
+ 425   1        /// ------------ CAN Control/Status Register --------------
+ 426   1        //  reset INIT
+ 427   1        //  ...
+ 428   1        CAN_CON[0].MOD       = 0x000;
+ 429   1      
+ 430   1      
+ 431   1        // initializare intrerupere T0 
+ 432   1        // MCOHW_TimerISR trebuie sa se execute la fiecare ms
+ 433   1        // stop timer 0
+ 434   1        TR0     =  0;
+ 435   1        // mode 1
+ 436   1        TMOD    |= 1;
+ 437   1         // reincarcare la 1ms pentru 10MHz, X2 mode
+ 438   1        TH0 = 0xF9;
+ 439   1        TL0 = 0x8E;
+ 440   1      
+ 441   1        // start timer 0
+ 442   1        TR0     =  1;
+ 443   1        // enable timer 0
+ 444   1        ET0     =  1;
+ 445   1      /*OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO*/
+ 446   1      
+ 447   1      
+ 448   1        // rezultatul initializarii
+ 449   1        return baudrateok;
+ 450   1      }
+ 451          
+ 452          /**************************************************************************
+ 453          DOES:    Initializeaza urmatorul filtru disponibil                    
+ 454          RETURNS: 0 pentru esec, 1 pentru succes                 
+ 455          **************************************************************************/
+ 456          UNSIGNED8 MCOHW_SetCANFilter
+ 457            (
+ 458            UNSIGNED16 CANID  // identificatorul mesajului de receptionat
+ 459            )
+ 460          {
+ 461   1      
+ 462   1      /*OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO*/
+ 463   1      if(gCANFilter > 14)
+ 464   1      {
+ 465   2              return 0;
+ 466   2      }
+ 467   1      else
+ 468   1      {
+ 469   2              CAN_CON[0].DR[gCANFilter].H = CANID >> 3;
+ 470   2              CAN_CON[0].DR[gCANFilter].L = CANID << 5;
+ 471   2      
+ 472   2              gCANFilter++;
+ 473   2      
+ 474   2              return 1;
+ 475   2      }
+ 476   1      /*OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO*/
+ 477   1      
+ 478   1         return 0;
+ 479   1      }
+ 480          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    599    ----
+C51 COMPILER V8.02   MCOHWSKCAN                                                            11/27/2018 18:28:33 PAGE 9   
+
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      1      10
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =      2    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  2 WARNING(S),  0 ERROR(S)

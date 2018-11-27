@@ -1,0 +1,11 @@
+".\obj\mco.obj",
+".\obj\mcohwSKCAN.obj",
+".\obj\lcd.obj",
+".\obj\rSKCANio.obj",
+".\obj\mainSKCAN.obj",
+".\obj\userSKCAN.obj" 
+TO ".\obj\MCO_SKCAN" 
+PRINT(".\lst\MCO_SKCAN.m51") RAMSIZE(256) 
+DISABLEWARNING (16) 
+CODE( 0X0000-0X3FFF )
+XDATA( 0X4000-0X7FFF,0XF800-0XFFFF )

@@ -137,21 +137,21 @@ UNSIGNED8 MCOHW_PullMessage
 	UNSIGNED8  j;
 
   // testeaza obiectele de receptie	definite
-  for (j=1; j<=gCANFilter; j++)
+/*  for (j=1; j<=gCANFilter; j++)
   {
 
 /*OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO*/
     // verifica daca a fost primit vreun mesaj
-    if (1)//(((CAN_CON->mesaj[j].MCRH) & 0x03) == 0x02)	   // NEWDAT?
-	{
+ //   if (1)//(((CAN_CON->mesaj[j].MCRH) & 0x03) == 0x02)	   // NEWDAT?
+//	{
       	/* FlMu: Stub for warning -- TO BE DELETED */
-		pReceiveBuf = 0; 
-/*OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO*/
+//		pReceiveBuf = 0; 
+//*OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO*/
 
       // return 1 - message received
-      return (1);
-    }
-  }
+//      return (1);
+//    }
+  //}									
 
   // return 0 - no message received
   return (0);
@@ -186,7 +186,7 @@ UNSIGNED8 MCOHW_PushMessage
 
   for(i=Length; i>0; i--)
   {
-   		CAN_CON->MsgObj[gCANFilter].Data[i-1] = pTransmitBuf->BUF[i]; 
+   		CAN_CON->MsgObj[gCANFilter].Data[i-1] = pTransmitBuf->BUF[i-1]; 
   }
 
   CAN_CON->TRSR1 = 1 << gCANFilter;
@@ -318,7 +318,7 @@ UNSIGNED8 MCOHW_Init
 /*OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO*/
  //  -------------- CAN Mode/Status Register ---------------
   //  start the initialization of the CAN Module
-  CAN_CON[1].MOD   = 0x001;
+  CAN_CON[0].MOD   = 0x001;
 
   //  -------------- Output-Control Register ----------------
   //  Output Mode:  Normal Mode
@@ -326,122 +326,122 @@ UNSIGNED8 MCOHW_Init
   //       The high and low side transistor T0P/T0N are enable
   //  TX1: The Output is driven directly with CAN data
   //       The high and low side transistor T1P/T1N are enable
-  CAN_CON[1].OC    = 0x0D8;
+  CAN_CON[0].OC    = 0x0D8;
 
   //  --------------- CAN Control Register ------------------
-  CAN_CON[1].CTRL  = 0x000;
+  CAN_CON[0].CTRL  = 0x000;
 
   //  ---------------- Interrupt Register -------------------
-  CAN_CON[1].INT   = 0x000;  //reset all interrupt request bits
-  CAN_CON[1].IMSK  = 0x000;  //no interrupts (Interrupt mask register) 
+  CAN_CON[0].INT   = 0x000;  //reset all interrupt request bits
+  CAN_CON[0].IMSK  = 0x000;  //no interrupts (Interrupt mask register) 
   
-  CAN_CON[1].RRR1  = 0x000;  //reset receive-Ready Register
-  CAN_CON[1].RRR2  = 0x000;  //        -"-
-  CAN_CON[1].RIMR1 = 0x000;  //disable all receive Bits (Receive-Interrupt -Mask Register)
-  CAN_CON[1].RIMR2 = 0x000;
+  CAN_CON[0].RRR1  = 0x000;  //reset receive-Ready Register
+  CAN_CON[0].RRR2  = 0x000;  //        -"-
+  CAN_CON[0].RIMR1 = 0x000;  //disable all receive Bits (Receive-Interrupt -Mask Register)
+  CAN_CON[0].RIMR2 = 0x000;
 
   ///  ------------ Bit Timing Register ---------------------
   /// baudrate =  100.000 KBaud
   /// there are 5 time quanta before sample point
   /// there are 4 time quanta after sample point
   /// the (re)synchronization jump width is 2 time quanta 
-  CAN_CON[1].BL1   = 0x034;
-  CAN_CON[1].BL2   = 0x041;
-  CAN_CON[1].BRPR  = 0x009;
+  CAN_CON[0].BL1   = 0x034;
+  CAN_CON[0].BL2   = 0x041;
+  CAN_CON[0].BRPR  = 0x009;
 
 
   //  ------------- Port Control Register -------------------
-  CAN_CON[1].Port[0].PDR = 0x0FF;  //Port Direction Register (direction is output)
-  CAN_CON[1].Port[0].LR  = 0x0FF;  //Port Latch Register ()
+  CAN_CON[0].Port[0].PDR = 0x0FF;  //Port Direction Register (direction is output)
+  CAN_CON[0].Port[0].LR  = 0x0FF;  //Port Latch Register ()
 
 
 
   //  ================== Descriptor Registers ===============
 
   //  Message-Object 0
-  CAN_CON[1].DR[0].H  = 0xFF;
-  CAN_CON[1].DR[0].L  = 0xE0;
+  CAN_CON[0].DR[0].H  = 0xFF;
+  CAN_CON[0].DR[0].L  = 0xE0;
 
   //  Message-Object 1
   //   This message operates as a data frame
   //   Identifier = 0x7
-  CAN_CON[1].DR[1].H  = 0xFF;	      //
-  CAN_CON[1].DR[1].L  = 0xE0;        // 
+  CAN_CON[0].DR[1].H  = 0xFF;	      //
+  CAN_CON[0].DR[1].L  = 0xE0;        // 
 
-  CAN_CON[1].MsgObj[1].Data[7] = 0xAA;   // set data byte 7
-  CAN_CON[1].MsgObj[1].Data[6] = 0x11;   // set data byte 6
-  CAN_CON[1].MsgObj[1].Data[5] = 0x22;   // set data byte 5
-  CAN_CON[1].MsgObj[1].Data[4] = 0x33;   // set data byte 4
-  CAN_CON[1].MsgObj[1].Data[3] = 0x44;   // set data byte 3
-  CAN_CON[1].MsgObj[1].Data[2] = 0x55;   // set data byte 2
-  CAN_CON[1].MsgObj[1].Data[1] = 0x66;   // set data byte 1
-  CAN_CON[1].MsgObj[1].Data[0] = 0x77;   // set data byte 0
+  CAN_CON[0].MsgObj[1].Data[7] = 0xAA;   // set data byte 7
+  CAN_CON[0].MsgObj[1].Data[6] = 0x11;   // set data byte 6
+  CAN_CON[0].MsgObj[1].Data[5] = 0x22;   // set data byte 5
+  CAN_CON[0].MsgObj[1].Data[4] = 0x33;   // set data byte 4
+  CAN_CON[0].MsgObj[1].Data[3] = 0x44;   // set data byte 3
+  CAN_CON[0].MsgObj[1].Data[2] = 0x55;   // set data byte 2
+  CAN_CON[0].MsgObj[1].Data[1] = 0x66;   // set data byte 1
+  CAN_CON[0].MsgObj[1].Data[0] = 0x77;   // set data byte 0
 
 
   //  Message-Object 2-15
-  CAN_CON[1].DR[2].H  = 0xFF;
-  CAN_CON[1].DR[2].L  = 0xE0;
+  CAN_CON[0].DR[2].H  = 0xFF;
+  CAN_CON[0].DR[2].L  = 0xE0;
 
-  CAN_CON[1].DR[3].H  = 0xFF;
-  CAN_CON[1].DR[3].L  = 0xE0;
+  CAN_CON[0].DR[3].H  = 0xFF;
+  CAN_CON[0].DR[3].L  = 0xE0;
 
-  CAN_CON[1].DR[4].H  = 0xFF;
-  CAN_CON[1].DR[4].L  = 0xE0;
+  CAN_CON[0].DR[4].H  = 0xFF;
+  CAN_CON[0].DR[4].L  = 0xE0;
 		  
-  CAN_CON[1].DR[5].H  = 0xFF;
-  CAN_CON[1].DR[5].L  = 0xE0;
+  CAN_CON[0].DR[5].H  = 0xFF;
+  CAN_CON[0].DR[5].L  = 0xE0;
 
-  CAN_CON[1].DR[6].H  = 0xFF;
-  CAN_CON[1].DR[6].L  = 0xE0;
+  CAN_CON[0].DR[6].H  = 0xFF;
+  CAN_CON[0].DR[6].L  = 0xE0;
      
-  CAN_CON[1].DR[7].H  = 0xFF;
-  CAN_CON[1].DR[7].L  = 0xE0;
+  CAN_CON[0].DR[7].H  = 0xFF;
+  CAN_CON[0].DR[7].L  = 0xE0;
 
-  CAN_CON[1].DR[8].H  = 0xFF;
-  CAN_CON[1].DR[8].L  = 0xE0;
+  CAN_CON[0].DR[8].H  = 0xFF;
+  CAN_CON[0].DR[8].L  = 0xE0;
 
-  CAN_CON[1].DR[9].H  = 0xFF;
-  CAN_CON[1].DR[9].L  = 0xE0;
+  CAN_CON[0].DR[9].H  = 0xFF;
+  CAN_CON[0].DR[9].L  = 0xE0;
 
-  CAN_CON[1].DR[10].H  = 0xFF;
-  CAN_CON[1].DR[10].L  = 0xE0;
+  CAN_CON[0].DR[10].H  = 0xFF;
+  CAN_CON[0].DR[10].L  = 0xE0;
 
-  CAN_CON[1].DR[11].H  = 0xFF;
-  CAN_CON[1].DR[11].L  = 0xE0;
+  CAN_CON[0].DR[11].H  = 0xFF;
+  CAN_CON[0].DR[11].L  = 0xE0;
 
-  CAN_CON[1].DR[12].H  = 0xFF;
-  CAN_CON[1].DR[12].L  = 0xE0;
+  CAN_CON[0].DR[12].H  = 0xFF;
+  CAN_CON[0].DR[12].L  = 0xE0;
 
-  CAN_CON[1].DR[13].H  = 0xFF;
-  CAN_CON[1].DR[13].L  = 0xE0;
+  CAN_CON[0].DR[13].H  = 0xFF;
+  CAN_CON[0].DR[13].L  = 0xE0;
 
-  CAN_CON[1].DR[14].H  = 0xFF;
-  CAN_CON[1].DR[14].L  = 0xE0;
+  CAN_CON[0].DR[14].H  = 0xFF;
+  CAN_CON[0].DR[14].L  = 0xE0;
 
-  CAN_CON[1].DR[15].H  = 0xFF;
-  CAN_CON[1].DR[15].L  = 0xE0;
+  CAN_CON[0].DR[15].H  = 0xFF;
+  CAN_CON[0].DR[15].L  = 0xE0;
 
 
   /// ------------ CAN Control/Status Register --------------
   //  reset INIT
   //  ...
-  CAN_CON[1].MOD       = 0x000;
+  CAN_CON[0].MOD       = 0x000;
 
 
   // initializare intrerupere T0 
   // MCOHW_TimerISR trebuie sa se execute la fiecare ms
   // stop timer 0
- // TR0     =  0;
+  TR0     =  0;
   // mode 1
- // TMOD    |= 1;
+  TMOD    |= 1;
    // reincarcare la 1ms pentru 10MHz, X2 mode
-  //TH0 = 0xF9;
- // TL0 = 0x8E;
+  TH0 = 0xF9;
+  TL0 = 0x8E;
 
   // start timer 0
- // TR0     =  1;
+  TR0     =  1;
   // enable timer 0
- // ET0     =  1;
+  ET0     =  1;
 /*OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO*/
 
 

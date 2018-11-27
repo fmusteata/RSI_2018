@@ -1,0 +1,319 @@
+C51 COMPILER V8.02   USERSKCAN                                                             11/27/2018 18:28:33 PAGE 1   
+
+
+C51 COMPILER V8.02, COMPILATION OF MODULE USERSKCAN
+OBJECT MODULE PLACED IN .\obj\userSKCAN.obj
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE userSKCAN.c LARGE OPTIMIZE(9,SPEED) BROWSE ORDER INCDIR(..\MCO;..\SKCAN\Inc
+                    -lude) DEBUG OBJECTEXTEND PRINT(.\lst\userSKCAN.lst) OBJECT(.\obj\userSKCAN.obj)
+
+line level    source
+
+   1          /**************************************************************************
+   2          MODULE:    USER
+   3          CONTAINS:  MicroCANopen Object Dictionary and Process Image implementation
+   4          COPYRIGHT: Embedded Systems Academy, Inc. 2002-2003.
+   5                     All rights reserved. www.microcanopen.com
+   6                     This software was written in accordance to the guidelines at
+   7                     www.esacademy.com/software/softwarestyleguide.pdf
+   8          DISCLAIM:  Read and understand our disclaimer before using this code!
+   9                     www.esacademy.com/disclaim.htm
+  10          LICENSE:   Users that have purchased a license for PCANopenMagic
+  11                     (www.esacademy.com/software/pcanopenmagic)
+  12                     may use this code in commercial projects.
+  13                     Otherwise only educational use is acceptable.
+  14          VERSION:   1.21, Pf/Aa/Ck 16-OCT-03
+  15                           $LastChangedDate: 2016-10-01 $
+  16                     $LastChangedRevision: 235 $
+  17          ***************************************************************************/ 
+  18          
+  19          #include <mco.h>
+  20          #include "rskcanio.h"
+  21          #include <string.h>
+  22          
+  23          /*OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO*/
+  24          #include <reg515C.h>            // Pentru Keil
+  25          
+  26          // Se asigurã ca numarul de TPDO si RPDO este corect
+  27          #if (NR_OF_RPDOS != 2)
+                #if (NR_OF_TPDOS != 2)
+              #error Acest exemplu este numai pentru 2 TPDO si 2 RPDO!
+                #endif
+              #endif
+  32          
+  33          #define ADR_NOD 1                  // adresa nodului slave CANopen
+  34          
+  35          // MACROURI PENTRU INTRARILE IN OD
+  36          #define GETBYTE(val,pos) ((val >> pos) & 0xFF)
+  37          #define GETBYTES16(val) GETBYTE(val, 0), GETBYTE(val, 8)
+  38          #define GETBYTES32(val) GETBYTE(val, 0), GETBYTE(val, 8), GETBYTE(val,16), GETBYTE(val,24)
+  39          #define SDOREPLY(index,sub,len,val) 0x43 | ((4-len)<<2), GETBYTES16(index), sub, GETBYTES32(val)
+  40          #define SDOREPLY4(index,sub,len,d1,d2,d3,d4) 0x43 | ((4-len)<<2), GETBYTES16(index), sub, d1, d2, d3, d4
+  41          
+  42          #define ODENTRY(index,sub,len,offset) {index, sub, len, offset}
+  43          
+  44          // variabile globale
+  45          
+  46          // Aceasta structura contine imaginea procesului specifica nodului
+  47          UNSIGNED8 MEM_NEAR gProcImg[PROCIMG_SIZE];
+  48          
+  49          // Tabel cu raspunsurile SDO la operatiile de citire a OD
+  50          // Fiecare linie are 8 octeti:
+  51          //              Command Specifier pentru raspunsul SDO (1 octet)
+  52          //              bitii 2+3 contin: '4' – {number of data bytes}
+  53          //              Object Dictionary Index (2 octeti, low first)
+  54          //              Object Dictionary Subindex (1 byte)
+C51 COMPILER V8.02   USERSKCAN                                                             11/27/2018 18:28:33 PAGE 2   
+
+  55          //              Data (4 bytes, lowest bytes first)
+  56          UNSIGNED8 MEM_CONST SDOResponseTable[] = {
+  57          
+  58            // [1000h,00]: Device Type
+  59            SDOREPLY(0x1000, 0x00, 4, OD_DEVICE_TYPE), /* index, subindex, lng, valoare */
+  60          
+  61          #ifdef OD_SERIAL
+  62            // [1018h,00]: Identity Object, Number of Entries = 4         
+  63            SDOREPLY(0x1018, 0x00, 1, 0x00000004L),       /* index, subindex, lng, valoare */
+  64          #else
+                // [1018h,00]: Identity Object, Number of Entries = 3
+                SDOREPLY(0x1018, 0x00, 1, 0x00000003L),       /* index, subindex, lng, valoare */
+              #endif
+  68          
+  69            // [1018h,01]: Identity Object, Vendor ID
+  70            SDOREPLY(0x1018, 0x01, 4, OD_VENDOR_ID),      /* index, subindex, lng, valoare */
+  71          
+  72            // [1018h,02]: Identity Object, Product Code
+  73            SDOREPLY(0x1018, 0x02, 4, OD_PRODUCT_CODE),    /* index, subindex, lng, valoare */
+  74          
+  75            // [1018h,03]: Identity Object, Revision
+  76            SDOREPLY(0x1018, 0x03, 4, OD_REVISION),  /* index, subindex, lng, valoare */
+  77          
+  78          #ifdef OD_SERIAL
+  79            // [1018h,04]: Identity Object, Serial
+  80            SDOREPLY(0x1018, 0x04, 4, OD_SERIAL),    /* index, subindex, lng, valoare */
+  81          #endif
+  82          
+  83            // [2018h,00]: MicroCANopen Identity Object, Number of Entries = 3
+  84            SDOREPLY(0x2018, 0x00, 1, 0x00000003L),  /* index, subindex, lng, valoare */
+  85          
+  86            // [2018h,01]: MicroCANopen Identity Object, Vendor ID = 01455341, ESA Inc.
+  87            SDOREPLY(0x2018, 0x01, 4, 0x01455341L),  /* index, subindex, lng, valoare */
+  88          
+  89            // [2018h,02]: MicroCANopen Identity Object, Product Code = "MCOP"
+  90            SDOREPLY4(0x2018, 0x02, 4, 'P', 'O', 'C', 'M'),  /* index, subindex, lng, valoare */
+  91          
+  92            // [2018h,03]: MicroCANopen Identity Object, Revision = 1.20
+  93            SDOREPLY(0x2018, 0x03, 4, 0x00010020L),       /* index, subindex, lng, valoare */
+  94          
+  95          #ifdef PDO_IN_OD
+  96            // NOTA: Aceste intrari trebuie editate manual. Parametrii trebuie sa se potriveasca  
+  97            // cu parametrii folositi pentru a apela functiile MCO_InitRPDO and MCO_InitTPDO.
+  98          
+  99            /* RPDO1 Communication Parameter - Number of Entries */
+ 100            SDOREPLY(0x1400, 0x00, 1, 0x00000002L), /* index, subindex, lng, valoare */ 
+ 101            /* RPDO1 Communication Parameter - COB-ID */
+ 102            SDOREPLY(0x1400, 0x01, 4, 0x00000207L), /* index, subindex, lng, valoare */
+ 103            /* RPDO1 Communication Parameter - Transmission Type */
+ 104            SDOREPLY(0x1400, 0x02, 1, 0x000000FFL), /* index, subindex, lng, valoare */
+ 105          
+ 106            /* RPDO2 Communication Parameter - Number of Entries */ 
+ 107            SDOREPLY(0x1401, 0x00, 1, 0x00000002L),  /* index, subindex, lng, valoare */
+ 108            /* RPDO2 Communication Parameter - COB-ID */
+ 109            SDOREPLY(0x1401, 0x01, 4, 0x00000307L),  /* index, subindex, lng, valoare */
+ 110            /* RPDO1 Communication Parameter - Transmission Type */
+ 111            SDOREPLY(0x1401, 0x02, 1, 0x000000FFL),       /* index, subindex, lng, valoare */
+ 112          
+ 113            /* RPDO1 Mapping Parameter - Number of Entries */
+ 114            SDOREPLY(0x1600, 0x00, 1, 0x00000004L),       /* index, subindex, lng, valoare */
+ 115            /* RPDO1 Mapping Parameter - PDO Mapping Entry */
+ 116            SDOREPLY(0x1600, 0x01, 4, 0x62000108L),  /* index, subindex, lng, valoare */
+C51 COMPILER V8.02   USERSKCAN                                                             11/27/2018 18:28:33 PAGE 3   
+
+ 117            /* RPDO1 Mapping Parameter - PDO Mapping Entry */
+ 118            SDOREPLY(0x1600, 0x02, 4, 0x62000208L),       /* index, subindex, lng, valoare */
+ 119            /* RPDO1 Mapping Parameter - PDO Mapping Entry */
+ 120            SDOREPLY(0x1600, 0x03, 4, 0x62000308L),       /* index, subindex, lng, valoare */
+ 121            /* RPDO1 Mapping Parameter - PDO Mapping Entry */
+ 122            SDOREPLY(0x1600, 0x04, 4, 0x62000408L),       /* index, subindex, lng, valoare */
+ 123          
+ 124            /* RPDO2 Mapping Parameter - Number of Entries */
+ 125            SDOREPLY(0x1601, 0x00, 1, 0x00000002L),  /* index, subindex, lng, valoare */
+ 126            /* RPDO2 Mapping Parameter - PDO Mapping Entry */
+ 127            SDOREPLY(0x1601, 0x01, 4, 0x64110110L),  /* index, subindex, lng, valoare */
+ 128            /* RPDO2 Mapping Parameter - PDO Mapping Entry */
+ 129            SDOREPLY(0x1601, 0x02, 4, 0x64110210L),  /* index, subindex, lng, valoare */
+ 130          
+ 131          // TPDO1 communication parameters
+ 132            /* TPDO1 Communication Parameter - Number of Entries */
+ 133            SDOREPLY(0x1800, 0x00, 1, 0x00000002L),   /* index, subindex, lng, valoare */
+ 134            /* TPDO1 Communication Parameter - COB-ID */
+ 135            SDOREPLY(0x1800, 0x01, 4, 0x40000187L),       /* index, subindex, lng, valoare */
+ 136            /* TPDO1 Communication Parameter - Transmission Type */
+ 137            SDOREPLY(0x1800, 0x02, 1, 0x000000FFL),   /* index, subindex, lng, valoare */
+ 138            /* TPDO1 Communication Parameter - Inhibit Time */
+ 139            SDOREPLY(0x1800, 0x03, 2, 0L),                    /* index, subindex, lng, valoare */
+ 140            /* TPDO1 Communication Parameter - Event Timer */
+ 141            SDOREPLY(0x1800, 0x05, 2, 100L),                  /* index, subindex, lng, valoare */
+ 142          
+ 143          // TPDO2 Communication Parameters
+ 144            /* TPDO2 Communication Parameter - Number of Entries */
+ 145            SDOREPLY(0x1801, 0x00, 1, 0x00000002L),       /* index, subindex, lng, valoare */
+ 146            /* TPDO2 Communication Parameter - COB-ID */
+ 147            SDOREPLY(0x1801, 0x01, 4, 0x40000287L),       /* index, subindex, lng, valoare */
+ 148            /* TPDO2 Communication Parameter - Transmission Type */
+ 149            SDOREPLY(0x1801, 0x02, 1, 0x000000FFL),       /* index, subindex, lng, valoare */
+ 150            /* TPDO2 Communication Parameter - Inhibit Time */
+ 151            SDOREPLY(0x1801, 0x03, 2, 50L),                   /* index, subindex, lng, valoare */
+ 152            /* TPDO2 Communication Parameter - Event Timer */
+ 153            SDOREPLY(0x1801, 0x05, 2, 100L),                      /* index, subindex, lng, valoare */
+ 154          
+ 155          // TPDO1 Mapping Parameters
+ 156            /* TPDO1 Mapping Parameter - Number of Entries */
+ 157            SDOREPLY(0x1A00, 0x00, 1, 0x00000004L),
+ 158            /* TPDO1 Mapping Parameter - PDO Mapping Entry */
+ 159            SDOREPLY(0x1A00, 0x01, 4, 0x60000108L),
+ 160            /* TPDO1 Mapping Parameter - PDO Mapping Entry */
+ 161            SDOREPLY(0x1A00, 0x02, 4, 0x60000208L),
+ 162            /* TPDO1 Mapping Parameter - PDO Mapping Entry */
+ 163            SDOREPLY(0x1A00, 0x03, 4, 0x60000308L),
+ 164            /* TPDO1 Mapping Parameter - PDO Mapping Entry */
+ 165            SDOREPLY(0x1A00, 0x04, 4, 0x60000408L),
+ 166          
+ 167          // TPDO2 Mapping Parameters
+ 168            /* TPDO2 Mapping Parameter - Number of Entries */
+ 169            SDOREPLY(0x1A01, 0x00, 1, 0x00000002L),
+ 170            /* TPDO2 Mapping Parameter - PDO Mapping Entry */
+ 171            SDOREPLY(0x1A01, 0x01, 4, 0x64010110L),
+ 172            /* TPDO2 Mapping Parameter - PDO Mapping Entry */
+ 173            SDOREPLY(0x1A01, 0x02, 4, 0x64010210L),
+ 174          
+ 175            // Nr. de intrari pentru subindex zero ale tabelelor folosite in gODProcTable
+ 176            SDOREPLY(0x6000, 0x00, 1, 0x00000004L),
+ 177            SDOREPLY(0x6200, 0x00, 1, 0x00000004L),
+ 178            SDOREPLY(0x6401, 0x00, 1, 0x00000002L),
+C51 COMPILER V8.02   USERSKCAN                                                             11/27/2018 18:28:33 PAGE 4   
+
+ 179            SDOREPLY(0x6411, 0x00, 1, 0x00000002L),
+ 180          #endif // PDO_IN_OD
+ 181          
+ 182            // End-of-table marker
+ 183            SDOREPLY(0xFFFF, 0xFF, 0xFF, 0xFFFFFFFFL)
+ 184          };
+ 185          
+ 186          #ifdef PROCIMG_IN_OD
+ 187          // Tabel cu intrarile OD pentru datele din proces
+ 188          OD_PROCESS_DATA_ENTRY MEM_CONST gODProcTable[] = {
+ 189          
+ 190            // IN_digi
+ 191            /* mapping entries for TPDO1 [1A00] */
+ 192            ODENTRY(0x6000,0x01,1+ODRD,IN_digi_1),
+ 193            ODENTRY(0x6000,0x02,1+ODRD,IN_digi_2),
+ 194            ODENTRY(0x6000,0x03,1+ODRD,IN_digi_3),
+ 195            ODENTRY(0x6000,0x04,1+ODRD,IN_digi_4),
+ 196          
+ 197            // IN_ana
+ 198            /* mapping entries for TPDO2 [1A01] */
+ 199            ODENTRY(0x6401,0x01,2+ODRD,IN_ana_1),
+ 200            ODENTRY(0x6401,0x02,2+ODRD,IN_ana_2),
+ 201          
+ 202            // OUT_digi
+ 203            /* mapping entries for RPDO1 [1600] */
+ 204            ODENTRY(0x6200,0x01,1+ODRD+ODWR,OUT_digi_1),
+ 205            ODENTRY(0x6200,0x02,1+ODRD+ODWR,OUT_digi_2),
+ 206            ODENTRY(0x6200,0x03,1+ODRD+ODWR,OUT_digi_3),
+ 207            ODENTRY(0x6200,0x04,1+ODRD+ODWR,OUT_digi_4),
+ 208          
+ 209            // OUT_ana
+ 210            /* mapping entries for RPDO2 [1601] */
+ 211            ODENTRY(0x6411,0x01,2+ODRD+ODWR,OUT_ana_1),
+ 212            ODENTRY(0x6411,0x02,2+ODRD+ODWR,OUT_ana_2),
+ 213          
+ 214            // End-of-table marker
+ 215            ODENTRY(0xFFFF,0xFF,0xFF,0xFF)
+ 216          };
+ 217          #endif // PROCIMG_IN_OD
+ 218          
+ 219          /**************************************************************************
+ 220          DOES:    Aceasta functie este apelata daca a aparut o eroare fatala.
+ 221                           Codurile de eroare pentru mcohwxxx.c sunt in domeniul 0x8000 - 0x87FF.
+ 222                           Codurile de eroare pentru mco.c sunt in domeniul 0x8800 to 0x8FFF. 
+ 223                   Celelalte coduri de eroare pot fi folosite de aplicatie.
+ 224               
+ 225          RETURNS: nimic
+ 226          **************************************************************************/
+ 227          void MCOUSER_FatalError
+ 228            (
+ 229            UNSIGNED16 ErrCode  // codul de eroare
+ 230            )
+ 231          {
+ 232   1        //afiseaza codul de eroare 
+ 233   1        error_state(ErrCode & 0xFF);
+ 234   1      }
+ 235          
+ 236          /**************************************************************************
+ 237          DOES:    Functie call-back pentru resetarea aplicatiei.
+ 238                   Porneste ceasul de garda si asteapta pana acesta determina un reset.
+ 239          RETURNS: nimic
+ 240          **************************************************************************/
+C51 COMPILER V8.02   USERSKCAN                                                             11/27/2018 18:28:33 PAGE 5   
+
+ 241          void MCOUSER_ResetApplication
+ 242            (
+ 243            void
+ 244            )
+ 245          {
+ 246   1        // Resetarea de catre WDT nu e implementata in acest exemplu
+ 247   1        // MCOUSER_ResetCommunication();
+ 248   1      }
+ 249          
+ 250          /**************************************************************************
+ 251          DOES:   Aceasta functie reseteaza si initializeaza controlerul CAN si stiva CANOpen.
+ 252                          Este apelata de catre stiva CANOpen, daca un mesaj NMT solicita resetarea comunicatiei. 
+ 253                          This function both resets and initializes both the CAN interface
+ 254                  Aceasta functie trebuie sa apeleze MCO_Init si MCO_InitTPDO/MCO_InitRPDO.
+ 255          RETURNS: nothing
+ 256          **************************************************************************/
+ 257          void MCOUSER_ResetCommunication
+ 258            (
+ 259            void
+ 260            )
+ 261          {
+ 262   1        UNSIGNED8 i;
+ 263   1      
+ 264   1        EAL = 0;
+ 265   1      
+ 266   1        // Initializeaza (cu 0) variabilele de proces
+ 267   1        for (i = 0; i < PROCIMG_SIZE; i++)
+ 268   1        {
+ 269   2          gProcImg[i] = 0;
+ 270   2        }
+ 271   1      
+ 272   1        // 125kbit, Adresa nod, 1s heartbeat
+ 273   1        MCO_Init(125,ADR_NOD,1000); 
+ 274   1        
+ 275   1        // RPDO1, default ID (0x200+nodeID), 4 octeti
+ 276   1        MCO_InitRPDO(1,1,4,OUT_digi_1); 
+ 277   1      
+ 278   1        // RPDO2, default ID (0x300+nodeID), 4 octeti
+ 279   1        MCO_InitRPDO(2,2,4,OUT_ana_1); 
+ 280   1      
+ 281   1        // TPDO1, default ID (0x180+nodeID), 100ms event, 0ms inhibit, 4 bytes
+ 282   1        MCO_InitTPDO(1,0,100,0,4,IN_digi_1);   
+ 283   1        
+ 284   1        // TPDO2, default ID (0x280+nodeID), 1250ms event, 10ms inhibit, 4 bytes
+ 285   1        MCO_InitTPDO(2,0,250,10,4,IN_ana_1);
+ 286   1      }
+ 287          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    114    ----
+   CONSTANT SIZE    =    441    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     16    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
