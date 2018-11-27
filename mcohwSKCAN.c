@@ -130,28 +130,50 @@ UNSIGNED8 MCOHW_PullMessage
   CAN_MSG MEM_FAR *pReceiveBuf  // pointer la un buffer pentru un singur mesaj de stocat
   )
 {
-  // declaratii de variabile
-//  UNSIGNED32 Identifier;
-//  UNSIGNED8  Length;
-//  UNSIGNED8  i,j;
-	UNSIGNED8  j;
+  UNSIGNED32 Identifier;
+  UNSIGNED8  Length;
+  UNSIGNED8  i,j;
+	
 
   // testeaza obiectele de receptie	definite
-/*  for (j=1; j<=gCANFilter; j++)
+  for (j=0; j<gCANFilter; j++)
   {
 
 /*OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO*/
-    // verifica daca a fost primit vreun mesaj
- //   if (1)//(((CAN_CON->mesaj[j].MCRH) & 0x03) == 0x02)	   // NEWDAT?
-//	{
+   
+	if((CAN_CON->RRR1 & (1 << j)) != 0)
+	{
+		/* Extrage ID-ul si Lungimea */
+   		Identifier = (CAN_CON->DR[j].H << 3) | ((CAN_CON->DR[j].L >> 5) & 0x07);
+		Length =  CAN_CON->DR[j].L & 0x0F;
+
+		for(i=8; i>0; i--)
+  		{
+   			pReceiveBuf->BUF[i-1] = CAN_CON->MsgObj[j].Data[i-1]; 
+  		}
+
+	    /* Salveaza ID-ul si Lungimea */
+	    pReceiveBuf->ID =  Identifier;
+		pReceiveBuf->LEN = Length;
+
+		/* Sterge mesajul primit din RRR1 */
+		CAN_CON->RRR1 = CAN_CON->RRR1 & (~(1 << j));
+
+		return(1);
+	}
+
+	
+	// verifica daca a fost primit vreun mesaj
+    //if (1)//(CAN_CON[0].RRPR1 & 0x0F)//(((CAN_CON->mesaj[j].MCRH) & 0x03) == 0x02)	   // NEWDAT?
+	//{
       	/* FlMu: Stub for warning -- TO BE DELETED */
 //		pReceiveBuf = 0; 
 //*OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO*/
 
       // return 1 - message received
-//      return (1);
-//    }
-  //}									
+
+    //}
+  }									
 
   // return 0 - no message received
   return (0);
