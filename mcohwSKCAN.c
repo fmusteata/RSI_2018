@@ -160,20 +160,7 @@ UNSIGNED8 MCOHW_PullMessage
 		CAN_CON->RRR1 = CAN_CON->RRR1 & (~(1 << j));
 
 		return(1);
-	}
-
-	
-	// verifica daca a fost primit vreun mesaj
-    //if (1)//(CAN_CON[0].RRPR1 & 0x0F)//(((CAN_CON->mesaj[j].MCRH) & 0x03) == 0x02)	   // NEWDAT?
-	//{
-      	/* FlMu: Stub for warning -- TO BE DELETED */
-//		pReceiveBuf = 0; 
-//*OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO*/
-
-      // return 1 - message received
-
-    //}
-  }									
+	}						
 
   // return 0 - no message received
   return (0);
