@@ -166,7 +166,7 @@ UNSIGNED8 MCOHW_PullMessage
   return (0);
 }
 
-
+}
 /**************************************************************************
 DOES:    Transmite un mesaj CAN                                  
 RETURNS: 0 daca messajul nu a putut fi transmis, 1 daca mesajul a fost transmis                                
@@ -319,11 +319,14 @@ UNSIGNED8 MCOHW_Init
   UNSIGNED16 BaudRate  // viteza dorita in kbps
   )
 {
-//  UNSIGNED8 i;
   UNSIGNED8 baudrateok = 0;
+  	
+	if(BaudRate != 125)
+		BaudRate = 125;
 
- /* Stub for warning -- TO BE DELETED */
- BaudRate = 100;
+//  UNSIGNED8 i;
+  
+
 /*OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO*/
  //  -------------- CAN Mode/Status Register ---------------
   //  start the initialization of the CAN Module
@@ -354,7 +357,7 @@ UNSIGNED8 MCOHW_Init
   /// there are 5 time quanta before sample point
   /// there are 4 time quanta after sample point
   /// the (re)synchronization jump width is 2 time quanta 
-  CAN_CON[0].BL1   = 0x034;
+  CAN_CON[0].BL1   = 0x023;
   CAN_CON[0].BL2   = 0x041;
   CAN_CON[0].BRPR  = 0x009;
 

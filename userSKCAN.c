@@ -30,7 +30,7 @@ VERSION:   1.21, Pf/Aa/Ck 16-OCT-03
   #endif
 #endif
 
-#define	ADR_NOD	1		   // adresa nodului slave CANopen
+#define	ADR_NOD	4		   // adresa nodului slave CANopen
 
 // MACROURI PENTRU INTRARILE IN OD
 #define GETBYTE(val,pos) ((val >> pos) & 0xFF)
