@@ -823,7 +823,7 @@ void LCD_text (void)
         LCD_vClear();
 
         LCD_vDisplayStringPos(1,1,"SIEMENS  HOT");
-	LCD_vDisplayStringPos(2,1,"Data:");
+	    LCD_vDisplayStringPos(2,1,"Data:");
  }
 
 

@@ -25,6 +25,10 @@ VERSION:   1.20, Pf/Aa/Ck/DM 13-OCT-03
 /*OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO*/
 #include <lcd.h>
 
+#define B4 P5_0
+#define B3 P5_1
+#define B2 P5_6
+#define B1 P5_7
 /*OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO*/
 
 // declaratie externa pentru tabelul cu imaginea procesului
@@ -39,21 +43,25 @@ void main
   void
   )
 {	
-
+	UNSIGNED16 ii = 0;
+	UNSIGNED16 ana1 = 0;
+	UNSIGNED16 ana2 = 0;
 /*OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO*/
  	// Reseteaza/Initializeaza SK-CAN
 	LCD_vInit();
-	LCD_vDisplayString("Init SKCAN - Done");
+	
 
 	MCOHW_Init(125);
 /*OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO*/
 	
   	// Reseteaza/Initializeaza communicatia CANopen
   	MCOUSER_ResetCommunication();
-	LCD_vDisplayString("Init MCO - Done");
+	
 		
     // Valideaza intreruperile
 	               
+	
+	
 
 
     EAL = 1;
@@ -63,23 +71,35 @@ void main
   	{
     	// Actualizeaza datele de proces
     	// Primele intrari numerice sunt citite de la switch-uri
-		//    gProcImg[IN_digi_1] = read_dip_switches();
-
+		//    gProcImg[IN_digi_1] = read_dip_switches();	
     	// Comanda primele iesiri digitale (pe led-uri)
 		//   switch_leds(gProcImg[OUT_digi_1]); 
-
-    	/*trimite in ecou toate celelalte valori de la intrare la iesire
+		
+		ii++;  
 	
 	    // digitale
-	    gProcImg[IN_digi_2] = gProcImg[OUT_digi_2];
-	    gProcImg[IN_digi_3] = gProcImg[OUT_digi_3];
-	    gProcImg[IN_digi_4] = gProcImg[OUT_digi_4];
+		gProcImg[IN_digi_1] = P5_7;
+	    gProcImg[IN_digi_2] = P5_6;
+	    gProcImg[IN_digi_3] = P5_1;
+	    gProcImg[IN_digi_4] = P5_0;
 	
+		if((ii % 200) == 0)
+		{			
+		 	gProcImg[IN_ana_1]   = ana1++;	
+	
+		}
+
+		if((ii % 2000) == 0)
+		{
+	
+			gProcImg[IN_ana_2]   = ana2++;
+		}
+
 	    // analogice
-	    gProcImg[IN_ana_1]   = gProcImg[OUT_ana_1];
-	    gProcImg[IN_ana_1+1] = gProcImg[OUT_ana_1+1];
-	    gProcImg[IN_ana_2]   = gProcImg[OUT_ana_2];
-	    gProcImg[IN_ana_2+1] = gProcImg[OUT_ana_2+1];	*/
+	  //  gProcImg[IN_ana_1]   = gProcImg[OUT_ana_1];
+	   // gProcImg[IN_ana_1+1] = gProcImg[OUT_ana_1+1];
+	   // gProcImg[IN_ana_2]   = gProcImg[OUT_ana_2];
+	  //  gProcImg[IN_ana_2+1] = gProcImg[OUT_ana_2+1];	
 	
 	    // Lanseaza prelucarea specifica retelei CANOpen
 	    MCO_ProcessStack();

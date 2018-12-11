@@ -191,8 +191,6 @@ UNSIGNED8 MCOHW_PushMessage
   CAN_CON->DR[gCANFilter].H = (Identifier & 0x07F8) >> 3;
   CAN_CON->DR[gCANFilter].L = ((Identifier & 0x0007) << 5) | Length;
 
-  //CAN_CON[0].DR[gCANFilter].H
-
   for(i=Length; i>0; i--)
   {
    		CAN_CON->MsgObj[gCANFilter].Data[i-1] = pTransmitBuf->BUF[i-1]; 
