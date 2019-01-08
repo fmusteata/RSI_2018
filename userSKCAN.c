@@ -273,10 +273,10 @@ void MCOUSER_ResetCommunication
   MCO_Init(125,ADR_NOD,1000); 
   
   // RPDO1, default ID (0x200+nodeID), 4 octeti
-  MCO_InitRPDO(1,1,4,OUT_digi_1); 
+  MCO_InitRPDO(1,0x183,4,OUT_digi_1); 
 
   // RPDO2, default ID (0x300+nodeID), 4 octeti
-  MCO_InitRPDO(2,2,4,OUT_ana_1); 
+  MCO_InitRPDO(2,0x286,4,OUT_ana_1); 
 
   // TPDO1, default ID (0x180+nodeID), 100ms event, 0ms inhibit, 4 bytes
   MCO_InitTPDO(1,0,100,0,4,IN_digi_1);   

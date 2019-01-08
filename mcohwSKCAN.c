@@ -131,8 +131,12 @@ UNSIGNED8 MCOHW_PullMessage
   )
 {
   UNSIGNED32 Identifier;
-  UNSIGNED8  Length;
+  UNSIGNED8  Length,temp;
   UNSIGNED8  i,j;
+
+if (CAN_CON->RRR1)
+  temp=CAN_CON->RRR1;
+
 	
 
   // testeaza obiectele de receptie	definite
@@ -141,10 +145,10 @@ UNSIGNED8 MCOHW_PullMessage
 
 /*OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO*/
    
-	if((CAN_CON->RRR1 & (1 << j)) != 0)
+	if(((CAN_CON->RRR1 & (1 << j))))
 	{
 		/* Extrage ID-ul si Lungimea */
-   		Identifier = (CAN_CON->DR[j].H << 3) | ((CAN_CON->DR[j].L >> 5) & 0x07);
+   		Identifier = (CAN_CON->DR[j].H << 3) | (CAN_CON->DR[j].L >> 5);
 		Length =  CAN_CON->DR[j].L & 0x0F;
 
 		for(i=8; i>0; i--)
@@ -161,10 +165,9 @@ UNSIGNED8 MCOHW_PullMessage
 
 		return(1);
 	}						
-
+  }
   // return 0 - no message received
   return (0);
-}
 
 }
 /**************************************************************************
